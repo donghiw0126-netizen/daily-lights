@@ -1,0 +1,368 @@
+'use strict';
+// Daily Lights 게임 규칙 (화면과 무관한 순수 로직)
+// 브라우저에서는 window.DailyLightsLogic 으로, Node.js 테스트에서는 require('./logic.js') 로 사용합니다.
+(function (root, factory) {
+  const api = factory();
+  if (typeof module === 'object' && module.exports) module.exports = api;
+  else root.DailyLightsLogic = api;
+})(typeof self !== 'undefined' ? self : this, function () {
+  const KST_OFFSET_MS = 9 * 60 * 60 * 1000; // 한국은 서머타임이 없어 항상 UTC+9
+  const DAY_MS = 24 * 60 * 60 * 1000;
+  const MAX_SAVED_COUNT = 100000;
+  const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+  // 난이도: 보드 크기와 "최소 해답 길이"의 목표 범위
+  const DIFFICULTIES = {
+    easy:   { size: 3, label: '초급', minMoves: [4, 6] },
+    normal: { size: 4, label: '중급', minMoves: [5, 7] },
+    hard:   { size: 5, label: '고급', minMoves: [9, 12] },
+  };
+  const DIFFICULTY_IDS = Object.keys(DIFFICULTIES);
+  const DEFAULT_DIFFICULTY = 'easy';
+
+  function isDifficulty(id) {
+    return Object.prototype.hasOwnProperty.call(DIFFICULTIES, id);
+  }
+
+  // ── 날짜 ───────────────────────────────────────────────
+
+  // 사용자의 PC 시간대와 상관없이 "한국 날짜"를 YYYY-MM-DD 로 돌려줍니다.
+  function dateKeyKST(now = Date.now()) {
+    return new Date(now + KST_OFFSET_MS).toISOString().slice(0, 10);
+  }
+
+  // 다음 한국 자정까지 남은 밀리초 (자정에 퍼즐을 바꾸는 타이머용)
+  function msUntilNextKSTMidnight(now = Date.now()) {
+    const kstNow = now + KST_OFFSET_MS;
+    return DAY_MS - (((kstNow % DAY_MS) + DAY_MS) % DAY_MS);
+  }
+
+  // 'YYYY-MM-DD' 문자열에 n일을 더합니다. (시간대 영향이 없도록 UTC 로만 계산)
+  function addDays(date, n) {
+    const [y, m, d] = date.split('-').map(Number);
+    return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10);
+  }
+
+  // 형식뿐 아니라 실제로 있는 날짜인지 확인 ('2026-02-30' 같은 값 거부)
+  function isValidDate(date) {
+    return typeof date === 'string' && DATE_PATTERN.test(date) && addDays(date, 0) === date;
+  }
+
+  // 달력용: 해당 월 1일의 요일(0=일요일)과 그 달의 날짜 목록
+  function monthDays(year, month) {
+    const firstWeekday = new Date(Date.UTC(year, month - 1, 1)).getUTCDay();
+    const count = new Date(Date.UTC(year, month, 0)).getUTCDate();
+    const prefix = `${year}-${String(month).padStart(2, '0')}-`;
+    const dates = Array.from({ length: count }, (_, i) => prefix + String(i + 1).padStart(2, '0'));
+    return { firstWeekday, dates };
+  }
+
+  // ── 결정적 난수 ─────────────────────────────────────────
+  // 같은 문자열이면 어느 기기에서든 같은 난수열이 나옵니다.
+
+  function seedFromString(value) { // FNV-1a 해시
+    let h = 2166136261;
+    for (const c of value) { h ^= c.charCodeAt(0); h = Math.imul(h, 16777619); }
+    return h >>> 0;
+  }
+
+  function seededRandom(seed) { // mulberry32
+    let x = seed >>> 0;
+    return () => {
+      x += 0x6D2B79F5;
+      let t = x;
+      t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  // ── 게임 규칙 ───────────────────────────────────────────
+
+  // index 칸을 눌렀을 때 바뀌는 칸들(본인 + 상하좌우)
+  function affected(index, size) {
+    const row = Math.floor(index / size);
+    const col = index % size;
+    return [[row, col], [row - 1, col], [row + 1, col], [row, col - 1], [row, col + 1]]
+      .filter(([r, c]) => r >= 0 && r < size && c >= 0 && c < size)
+      .map(([r, c]) => r * size + c);
+  }
+
+  // 보드를 직접 바꿉니다(mutate).
+  function press(state, index, size) {
+    for (const i of affected(index, size)) state[i] = !state[i];
+  }
+
+  function isSolved(state) {
+    return state.every(on => !on);
+  }
+
+  // ── 해답 계산 ───────────────────────────────────────────
+  // "어떤 칸을 누를지"를 0/1 연립방정식(GF(2))으로 풀어 가장 짧은 해답을 찾습니다.
+  // 돌려주는 값: 눌러야 할 칸 번호 배열(작은 번호부터). 풀 수 없는 보드면 null.
+  function solve(state, size) {
+    const n = size * size;
+    const rows = [];
+    for (let cell = 0; cell < n; cell++) {
+      const row = new Uint8Array(n + 1);
+      for (const p of affected(cell, size)) row[p] = 1; // 영향 관계는 대칭이라 그대로 사용 가능
+      row[n] = state[cell] ? 1 : 0;
+      rows.push(row);
+    }
+
+    // 가우스-조르단 소거
+    const pivotCols = [];
+    let r = 0;
+    for (let c = 0; c < n && r < n; c++) {
+      let p = r;
+      while (p < n && !rows[p][c]) p++;
+      if (p === n) continue;
+      [rows[r], rows[p]] = [rows[p], rows[r]];
+      for (let i = 0; i < n; i++) {
+        if (i !== r && rows[i][c]) for (let j = c; j <= n; j++) rows[i][j] ^= rows[r][j];
+      }
+      pivotCols.push(c);
+      r++;
+    }
+    for (let i = r; i < n; i++) if (rows[i][n]) return null; // 0 = 1 모순 → 풀 수 없음
+
+    // 자유 변수의 모든 조합 중 누르는 횟수가 가장 적은 해답을 고릅니다.
+    // (3×3은 조합 1개, 4×4는 16개, 5×5는 4개뿐이라 금방 끝납니다)
+    const isPivot = new Set(pivotCols);
+    const freeCols = [];
+    for (let c = 0; c < n; c++) if (!isPivot.has(c)) freeCols.push(c);
+    let best = null;
+    for (let mask = 0; mask < (1 << freeCols.length); mask++) {
+      const x = new Uint8Array(n);
+      freeCols.forEach((c, k) => { x[c] = (mask >> k) & 1; });
+      pivotCols.forEach((pc, i) => {
+        let v = rows[i][n];
+        for (const fc of freeCols) if (rows[i][fc] && x[fc]) v ^= 1;
+        x[pc] = v;
+      });
+      const presses = [];
+      x.forEach((v, i) => { if (v) presses.push(i); });
+      if (!best || presses.length < best.length) best = presses;
+    }
+    return best;
+  }
+
+  // 힌트: 최소 해답에 들어 있는 칸 하나(가장 위·왼쪽).
+  // 누르는 순서는 결과에 영향이 없으므로, 이 칸을 누르면 남은 최소 횟수가 정확히 1 줄어듭니다.
+  function hint(state, size) {
+    const solution = solve(state, size);
+    return solution && solution.length ? solution[0] : null;
+  }
+
+  // ── 퍼즐 생성 ───────────────────────────────────────────
+  // 꺼진 보드에 서로 다른 칸을 실제로 눌러 만들기 때문에 항상 풀 수 있습니다.
+  // 최소 해답이 난이도 목표 범위에 들어올 때까지 다시 만들어 난이도를 고르게 맞춥니다.
+  function generatePuzzle(date, difficulty) {
+    const { size, minMoves: [low, high] } = DIFFICULTIES[difficulty];
+    const n = size * size;
+    const rng = seededRandom(seedFromString(`daily-lights:v2:${difficulty}:${date}`));
+    let fallback = null;
+    for (let attempt = 0; attempt < 500; attempt++) {
+      const count = low + Math.floor(rng() * (high - low + 1));
+      const cells = Array.from({ length: n }, (_, i) => i);
+      const board = Array(n).fill(false);
+      for (let k = 0; k < count; k++) { // 섞으면서 앞에서부터 count 개 고르기 (Fisher-Yates)
+        const j = k + Math.floor(rng() * (n - k));
+        [cells[k], cells[j]] = [cells[j], cells[k]];
+        press(board, cells[k], size);
+      }
+      const minMoves = solve(board, size).length;
+      if (minMoves >= low && minMoves <= high) return { board, size, minMoves };
+      if (minMoves > 0 && !fallback) fallback = { board, size, minMoves };
+    }
+    return fallback; // 테스트상 10년치 모두 위에서 끝나지만, 만일을 대비한 안전장치
+  }
+
+  // ── 저장 데이터 ─────────────────────────────────────────
+  // store = {
+  //   version: 2,
+  //   difficulty: 'easy',                                      마지막으로 고른 난이도
+  //   progress: { easy: { date, board, moves, hints } },       오늘 진행 중인 판
+  //   history:  { easy: { '2026-11-01': { moves, hints, minMoves } } }  날짜별 최고 기록
+  // }
+
+  function createStore() {
+    const store = { version: 2, difficulty: DEFAULT_DIFFICULTY, progress: {}, history: {} };
+    for (const id of DIFFICULTY_IDS) store.history[id] = {};
+    return store;
+  }
+
+  const isCount = (v, min = 0) => Number.isSafeInteger(v) && v >= min && v <= MAX_SAVED_COUNT;
+
+  function validProgress(p, difficulty, today) {
+    const { size } = DIFFICULTIES[difficulty];
+    return !!p && p.date === today
+      && Array.isArray(p.board) && p.board.length === size * size
+      && p.board.every(v => typeof v === 'boolean')
+      && isCount(p.moves) && isCount(p.hints)
+      && solve(p.board, size) !== null; // 정상 플레이로는 나올 수 없는 보드는 거부
+  }
+
+  function validResult(r, difficulty) {
+    const { size } = DIFFICULTIES[difficulty];
+    return !!r && isCount(r.moves, 1) && isCount(r.hints)
+      && Number.isSafeInteger(r.minMoves) && r.minMoves >= 1 && r.minMoves <= size * size;
+  }
+
+  // 저장 문자열을 읽어 항상 "쓸 수 있는" store 를 돌려줍니다. 절대 예외를 던지지 않습니다.
+  // 손상된 부분만 버리고 나머지(예: 다른 난이도 기록)는 살립니다. 지난 날짜의 진행 중인 판은 버립니다.
+  function parseStore(raw, today) {
+    let data;
+    try { data = JSON.parse(raw); } catch { return createStore(); }
+    return normalizeStore(data, today);
+  }
+
+  function normalizeStore(data, today) {
+    const store = createStore();
+    if (!data || typeof data !== 'object' || data.version !== 2) return store;
+
+    if (isDifficulty(data.difficulty)) store.difficulty = data.difficulty;
+    for (const id of DIFFICULTY_IDS) {
+      const p = data.progress && data.progress[id];
+      if (validProgress(p, id, today)) {
+        store.progress[id] = { date: p.date, board: p.board.slice(), moves: p.moves, hints: p.hints };
+      }
+      const days = data.history && data.history[id];
+      if (days && typeof days === 'object') {
+        for (const [date, r] of Object.entries(days)) {
+          if (isValidDate(date) && validResult(r, id)) {
+            store.history[id][date] = { moves: r.moves, hints: r.hints, minMoves: r.minMoves };
+          }
+        }
+      }
+    }
+    return store;
+  }
+
+  function serializeStore(store) {
+    return JSON.stringify(store);
+  }
+
+  // 퍼펙트: 힌트 없이 최소 횟수로 성공
+  function isPerfect(result) {
+    return result.hints === 0 && result.moves === result.minMoves;
+  }
+
+  // 더 좋은 기록인가? 힌트를 덜 쓴 쪽 → 같으면 움직임이 적은 쪽
+  function isBetterResult(next, prev) {
+    if (!prev) return true;
+    if (next.hints !== prev.hints) return next.hints < prev.hints;
+    return next.moves < prev.moves;
+  }
+
+  // 성공 기록을 남깁니다. 같은 날 다시 풀었다면 더 좋은 기록만 남깁니다.
+  function recordResult(store, difficulty, date, result) {
+    const days = store.history[difficulty];
+    const isNewBest = isBetterResult(result, days[date]);
+    if (isNewBest) days[date] = { moves: result.moves, hints: result.hints, minMoves: result.minMoves };
+    return isNewBest;
+  }
+
+  // 난이도별 통계
+  function statsFor(store, difficulty) {
+    const results = Object.values(store.history[difficulty]);
+    return {
+      cleared: results.length,
+      perfect: results.filter(isPerfect).length,
+      noHint: results.filter(r => r.hints === 0).length,
+    };
+  }
+
+  // ── 연속 기록과 전체 통계 ────────────────────────────────
+
+  // 어느 난이도든 하나라도 성공한 날짜들
+  function clearedDates(store) {
+    const dates = new Set();
+    for (const id of DIFFICULTY_IDS) for (const date of Object.keys(store.history[id])) dates.add(date);
+    return dates;
+  }
+
+  // current: 지금 이어지고 있는 연속 성공 일수
+  //   오늘 아직 안 풀었으면 어제까지 센 값 (오늘 자정까지는 연속이 끊기지 않은 것으로 봄)
+  // best: 지금까지 가장 길었던 연속 성공 일수
+  function streaks(store, today) {
+    const days = clearedDates(store);
+    const todayCleared = days.has(today);
+    let current = 0;
+    for (let d = todayCleared ? today : addDays(today, -1); days.has(d); d = addDays(d, -1)) current++;
+
+    let best = 0;
+    let run = 0;
+    let prev = null;
+    for (const d of [...days].sort()) {
+      run = prev !== null && addDays(prev, 1) === d ? run + 1 : 1;
+      best = Math.max(best, run);
+      prev = d;
+    }
+    return { current, best, todayCleared };
+  }
+
+  function totalStats(store) {
+    let perfect = 0;
+    for (const id of DIFFICULTY_IDS) perfect += statsFor(store, id).perfect;
+    return { days: clearedDates(store).size, perfect };
+  }
+
+  // 난이도 3개의 오늘 결과를 한 번에 공유하는 문구
+  function dailyShareText(store, today) {
+    const lines = [`Daily Lights ${today}`];
+    for (const id of DIFFICULTY_IDS) {
+      const { label, size } = DIFFICULTIES[id];
+      const r = store.history[id][today];
+      let text = '⬜ 아직';
+      if (r && isPerfect(r)) text = `🌟 ${r.moves}번 퍼펙트`;
+      else if (r) text = `✅ ${r.moves}번 (최소 ${r.minMoves})${r.hints ? ` 💡${r.hints}` : ''}`;
+      lines.push(`${label} ${size}×${size}  ${text}`);
+    }
+    const { current } = streaks(store, today);
+    if (current > 0) lines.push(`🔥 ${current}일 연속 성공`);
+    return lines.join('\n');
+  }
+
+  // ── 백업과 복원 ─────────────────────────────────────────
+
+  const BACKUP_APP = 'daily-lights';
+
+  function createBackup(store, exportedAt = new Date().toISOString()) {
+    return JSON.stringify({ app: BACKUP_APP, exportedAt, store }, null, 2);
+  }
+
+  // 백업 파일 내용을 검사해 store 로 돌려줍니다. Daily Lights 백업이 아니면 null.
+  function parseBackup(text, today) {
+    let data;
+    try { data = JSON.parse(text); } catch { return null; }
+    if (!data || data.app !== BACKUP_APP || !data.store || data.store.version !== 2) return null;
+    return normalizeStore(data.store, today);
+  }
+
+  // 백업의 기록을 현재 기록에 합칩니다. 같은 날짜는 더 좋은 기록을 남기므로 기존 기록이 사라지지 않습니다.
+  function mergeHistory(target, incoming) {
+    let added = 0;
+    let improved = 0;
+    for (const id of DIFFICULTY_IDS) {
+      for (const [date, result] of Object.entries(incoming.history[id])) {
+        const existing = target.history[id][date];
+        if (!existing) added++;
+        else if (isBetterResult(result, existing)) improved++;
+        else continue;
+        target.history[id][date] = { ...result };
+      }
+    }
+    return { added, improved };
+  }
+
+  return {
+    DIFFICULTIES, DIFFICULTY_IDS, DEFAULT_DIFFICULTY, isDifficulty,
+    dateKeyKST, msUntilNextKSTMidnight, addDays, isValidDate, monthDays,
+    seedFromString, seededRandom,
+    affected, press, isSolved, solve, hint, generatePuzzle,
+    createStore, parseStore, serializeStore, isPerfect, isBetterResult, recordResult, statsFor,
+    clearedDates, streaks, totalStats, dailyShareText,
+    createBackup, parseBackup, mergeHistory,
+  };
+});

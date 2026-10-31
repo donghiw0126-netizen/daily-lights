@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- Daily Lights 아이콘: 가운데를 눌렀을 때의 십자 모양 -->
+  <rect width="64" height="64" rx="14" fill="#0b1220"/>
+  <g fill="#1f2a3c">
+    <rect x="9" y="9" width="13" height="13" rx="3"/>
+    <rect x="42" y="9" width="13" height="13" rx="3"/>
+    <rect x="9" y="42" width="13" height="13" rx="3"/>
+    <rect x="42" y="42" width="13" height="13" rx="3"/>
+  </g>
+  <g fill="#8cf0bb">
+    <rect x="25.5" y="9" width="13" height="13" rx="3"/>
+    <rect x="9" y="25.5" width="13" height="13" rx="3"/>
+    <rect x="25.5" y="25.5" width="13" height="13" rx="3"/>
+    <rect x="42" y="25.5" width="13" height="13" rx="3"/>
+    <rect x="25.5" y="42" width="13" height="13" rx="3"/>
+  </g>
+  <circle cx="32" cy="32" r="2.6" fill="#ffffff"/>
+</svg>

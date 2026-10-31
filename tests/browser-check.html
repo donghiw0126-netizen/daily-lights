@@ -1,0 +1,307 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<title>Daily Lights 브라우저 점검</title>
+<style>body{font:14px monospace;background:#111;color:#eee;padding:16px}iframe{border:1px solid #444;display:block;margin:8px 0}.pass{color:#7f7}.fail{color:#f77}</style>
+</head>
+<body>
+<!--
+  실제 게임 화면(index.html)을 iframe으로 띄워 클릭·새로고침·화면 크기를 점검합니다.
+  반드시 로컬 서버로 열어야 합니다:  py -m http.server 8000  →  http://localhost:8000/tests/browser-check.html
+  주의: 이 브라우저의 Daily Lights 진행 기록을 잠시 사용하며, 점검이 끝나면 원래대로 되돌립니다.
+-->
+<h1>Daily Lights 브라우저 점검</h1>
+<pre id="result">실행 중…</pre>
+<script>
+const KEY = 'daily-lights-v2';
+const lines = [];
+let failed = 0;
+function check(ok, name, detail = '') {
+  if (!ok) failed++;
+  lines.push(`${ok ? 'PASS' : 'FAIL'}  ${name}${detail ? '  — ' + detail : ''}`);
+}
+const wait = ms => new Promise(r => setTimeout(r, ms));
+// 파일 읽기처럼 끝나는 시점을 알 수 없는 작업은, 고정 시간 대신 조건이 맞을 때까지 기다립니다.
+async function waitFor(condition, tries = 200) {
+  for (let i = 0; i < tries && !condition(); i++) await wait(20);
+  return condition();
+}
+
+function loadGame(width, height = 800) {
+  return new Promise(resolve => {
+    document.querySelector('iframe')?.remove();
+    const frame = document.createElement('iframe');
+    frame.width = width;
+    frame.height = height;
+    frame.src = '../index.html';
+    frame.onload = async () => { await wait(150); resolve(frame); };
+    document.body.appendChild(frame);
+  });
+}
+function reload(frame) {
+  return new Promise(resolve => {
+    frame.onload = async () => { await wait(150); resolve(frame); };
+    frame.contentWindow.location.reload();
+  });
+}
+const $ = (frame, sel) => frame.contentDocument.querySelector(sel);
+const tiles = frame => [...frame.contentDocument.querySelectorAll('.tile')];
+const state = frame => ({
+  board: tiles(frame).map(t => t.classList.contains('on')),
+  moves: Number($(frame, '#moves').textContent),
+  feedback: $(frame, '#feedback').textContent,
+  stats: $(frame, '#stats').textContent,
+});
+function choose(frame, id) {
+  const input = $(frame, `input[value="${id}"]`);
+  input.click(); // 실제 클릭과 같이 change 이벤트 발생
+}
+const overlaps = (a, b) => a.left < b.right - 0.5 && b.left < a.right - 0.5 && a.top < b.bottom - 0.5 && b.top < a.bottom - 0.5;
+
+async function gameplayChecks() {
+  localStorage.removeItem(KEY);
+  localStorage.setItem('daily-lights-v1', '{"old":true}');
+  const frame = await loadGame(390);
+  const win = frame.contentWindow;
+  const Logic = win.DailyLightsLogic;
+  const errors = [];
+  win.addEventListener('error', e => errors.push(e.message));
+  const today = Logic.dateKeyKST();
+
+  check(localStorage.getItem('daily-lights-v1') === null, '이전 버전(v1) 저장 데이터 정리');
+  check($(frame, '#dateTitle').textContent === today, '오늘 날짜(KST) 표시', today);
+  check(tiles(frame).length === 9 && $(frame, 'input[value="easy"]').checked, '처음 방문 → 초급 3×3');
+  const easy = Logic.generatePuzzle(today, 'easy');
+  check(String(state(frame).board) === String(easy.board), '초급 첫 화면 = 오늘의 초급 퍼즐');
+  check($(frame, '#par').textContent === `최소 ${easy.minMoves}번`, '최소 횟수 표시', $(frame, '#par').textContent);
+
+  // 난이도 전환
+  choose(frame, 'hard');
+  check(tiles(frame).length === 25, '고급 선택 → 5×5 보드');
+  tiles(frame)[0].click();
+  tiles(frame)[6].click();
+  const hardBefore = state(frame);
+  choose(frame, 'normal');
+  check(tiles(frame).length === 16 && state(frame).moves === 0, '중급 선택 → 4×4 새 보드');
+  choose(frame, 'hard');
+  const hardBack = state(frame);
+  check(hardBack.moves === 2 && String(hardBack.board) === String(hardBefore.board), '다시 고급으로 → 진행 상황 그대로');
+
+  await reload(frame);
+  const afterReload = state(frame);
+  check($(frame, 'input[value="hard"]').checked && afterReload.moves === 2 && String(afterReload.board) === String(hardBefore.board),
+    '새로고침 후 마지막 난이도와 진행 상황 복원');
+
+  // 힌트만 따라서 풀기
+  const remaining = Logic.solve(afterReload.board, 5).length;
+  let steps = 0;
+  while (!$(frame, '#hint').hidden && steps < 30) {
+    $(frame, '#hint').click();
+    const hinted = tiles(frame).findIndex(t => t.classList.contains('hinted'));
+    if (hinted < 0) break;
+    tiles(frame)[hinted].click();
+    steps++;
+  }
+  const won = state(frame);
+  check(won.board.every(on => !on) && steps === remaining, '힌트만 따라가면 최소 횟수로 성공', `${steps}번 (남은 최소 ${remaining}번)`);
+  check(won.feedback.includes('성공') && won.feedback.includes(`힌트 ${steps}회`), '성공 메시지에 힌트 횟수 표시', won.feedback);
+  check(!$(frame, '#share').hidden && $(frame, '#hint').hidden, '성공 후 힌트 → 공유 버튼으로 교체');
+  check(tiles(frame).every(t => t.disabled), '성공 후 타일 잠금');
+  check(!$(frame, 'input[value="hard"] + span .done').hidden, '고급 탭에 오늘 완료 ✓ 표시');
+  check(won.stats.includes('성공 1일') && won.stats.includes('퍼펙트 0일'), '고급 기록 갱신', won.stats);
+
+  // 다시 시작 후 힌트 없이 최소 해답으로 → 퍼펙트, 기록 갱신
+  $(frame, '#reset').click();
+  check(state(frame).moves === 0 && !tiles(frame)[0].disabled, '다시 시작 → 처음 보드');
+  check(state(frame).stats.includes('성공 1일'), '다시 시작해도 성공 기록은 유지', state(frame).stats);
+  for (const i of Logic.solve(state(frame).board, 5)) tiles(frame)[i].click();
+  const perfect = state(frame);
+  check(perfect.feedback.includes('퍼펙트') && perfect.stats.includes('퍼펙트 1일'), '힌트 없이 최소 횟수 → 퍼펙트', perfect.feedback);
+
+  // 다른 난이도 기록은 따로
+  choose(frame, 'easy');
+  check(state(frame).stats.startsWith('초급 기록 · 성공 0일'), '난이도별 기록 분리', state(frame).stats);
+
+  // 손상된 저장 데이터
+  localStorage.setItem(KEY, '{"version":2,"difficulty":"hard","progress":{"hard":{"board":[1,2]}},"history":{"hard":"x"}}');
+  await reload(frame);
+  const recovered = state(frame);
+  check(tiles(frame).length === 25 && recovered.moves === 0 && String(recovered.board) === String(Logic.generatePuzzle(today, 'hard').board),
+    '손상된 저장 데이터 → 쓸 수 있는 부분만 살리고 새로 시작');
+
+  // 키보드
+  const doc = frame.contentDocument;
+  tiles(frame)[12].focus();
+  $(frame, '#board').dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+  check(doc.activeElement === tiles(frame)[13], '방향키(→)로 옆 칸 이동');
+  check(tiles(frame).filter(t => t.tabIndex === 0).length === 1, 'Tab 순서에 타일은 하나만 (roving tabindex)');
+  check(errors.length === 0, '스크립트 오류 없음', errors.join(' | '));
+}
+
+// 파일 선택 창 없이 백업 파일을 고른 것처럼 만듭니다.
+function chooseFile(frame, text) {
+  const win = frame.contentWindow;
+  const input = $(frame, '#backupFile');
+  const transfer = new win.DataTransfer();
+  transfer.items.add(new win.File([text], 'backup.json', { type: 'application/json' }));
+  input.files = transfer.files;
+  input.dispatchEvent(new win.Event('change'));
+}
+
+async function recordsChecks() {
+  localStorage.removeItem(KEY);
+  const frame = await loadGame(390, 900);
+  const Logic = frame.contentWindow.DailyLightsLogic;
+  const today = Logic.dateKeyKST();
+  const day = n => Logic.addDays(today, n);
+  const errors = [];
+  localStorage.setItem(KEY, JSON.stringify({ version: 2, difficulty: 'easy', progress: {}, history: {
+    easy: { [day(-2)]: { moves: 4, hints: 0, minMoves: 4 } },
+    normal: { [day(-1)]: { moves: 6, hints: 1, minMoves: 5 } },
+    hard: { [day(-40)]: { moves: 9, hints: 0, minMoves: 9 } },
+  } }));
+  await reload(frame);
+  frame.contentWindow.addEventListener('error', e => errors.push(e.message));
+  const badge = $(frame, '#streakBadge');
+  check(!badge.hidden && badge.textContent === '🔥2', '어제까지 2일 연속 → 상단 배지 🔥2', badge.textContent);
+
+  for (const i of Logic.solve(state(frame).board, 3)) tiles(frame)[i].click();
+  check(state(frame).feedback.includes('3일 연속'), '오늘 첫 성공 → 연속 축하 메시지', state(frame).feedback);
+  check(badge.textContent === '🔥3', '배지 🔥3으로 갱신');
+
+  $(frame, '#openRecords').click();
+  const dialog = $(frame, '#records');
+  check(dialog.open, '기록 창 열림');
+  const text = sel => $(frame, sel).textContent;
+  check(text('#streakCurrent') === '3' && text('#streakBest') === '3', '현재/최고 연속 3일');
+  check(text('#totalDays') === '4' && text('#totalPerfect') === '3', '성공한 날 4일, 퍼펙트 3회', `${text('#totalDays')}, ${text('#totalPerfect')}`);
+  const todayCell = $(frame, '#calendarDays .day.today');
+  const todayText = todayCell && todayCell.querySelector('.sr-only').textContent;
+  check(todayCell && todayCell.classList.contains('cleared') && todayText.includes('초급 퍼펙트'),
+    '달력 오늘 칸: 성공 표시 + 화면 읽기용 설명', todayText);
+  check($(frame, '#nextMonth').disabled && !$(frame, '#prevMonth').disabled, '달력 이동: 다음 달 막힘, 이전 달 가능(40일 전 기록)');
+  const before = text('#calendarTitle');
+  $(frame, '#prevMonth').click();
+  check(text('#calendarTitle') !== before, '이전 달로 이동', text('#calendarTitle'));
+  check(!$(frame, '#shareToday').disabled, '오늘 성공 → 오늘의 기록 공유 가능');
+  check(frame.contentDocument.querySelectorAll('#difficultyRows tr').length === 3, '난이도별 기록 표 3줄');
+
+  // 백업 불러오기 (합치기)
+  const incoming = Logic.createStore();
+  incoming.history.hard[day(-3)] = { moves: 10, hints: 0, minMoves: 9 };
+  incoming.history.normal[day(-1)] = { moves: 5, hints: 0, minMoves: 5 }; // 같은 날 더 좋은 기록
+  chooseFile(frame, Logic.createBackup(incoming));
+  await waitFor(() => text('#recordsStatus') !== '');
+  check(text('#recordsStatus').includes('새 기록 1개') && text('#recordsStatus').includes('바뀐 날 1개'), '백업 합치기 결과 안내', text('#recordsStatus'));
+  check(text('#streakCurrent') === '4', '합친 뒤 연속 4일로 갱신');
+
+  const previousStatus = text('#recordsStatus');
+  chooseFile(frame, '{"hello":"world"}');
+  await waitFor(() => text('#recordsStatus') !== previousStatus);
+  check($(frame, '#recordsStatus').classList.contains('error'), '백업이 아닌 파일 → 오류 안내', text('#recordsStatus'));
+  check(text('#streakCurrent') === '4', '잘못된 파일을 불러와도 기록 그대로');
+
+  $(frame, '#closeRecords').click();
+  check(!dialog.open, '닫기 버튼으로 기록 창 닫힘');
+  await reload(frame);
+  check($(frame, '#streakBadge').textContent === '🔥4', '불러온 기록이 새로고침 후에도 유지');
+  check(errors.length === 0, '스크립트 오류 없음 (기록 창)', errors.join(' | '));
+}
+
+// 탭 두 개: 한쪽에서 푼 기록이 다른(오래된) 탭의 저장 때문에 사라지면 안 됩니다.
+async function multiTabChecks() {
+  localStorage.removeItem(KEY);
+  const load = frame => new Promise(r => { frame.onload = () => setTimeout(r, 150); frame.src = '../index.html'; });
+  const [a, b] = [document.createElement('iframe'), document.createElement('iframe')];
+  for (const f of [a, b]) { f.width = 390; f.height = 700; document.body.appendChild(f); }
+  await load(a);
+  await load(b);
+  const Logic = a.contentWindow.DailyLightsLogic;
+  const today = Logic.dateKeyKST();
+  const tilesA = [...a.contentDocument.querySelectorAll('.tile')];
+  for (const i of Logic.solve(tilesA.map(t => t.classList.contains('on')), 3)) tilesA[i].click();
+  b.contentDocument.querySelectorAll('.tile')[0].click(); // 탭 B가 곧바로 저장 (아직 A 소식을 못 들었을 수 있음)
+  const saved = JSON.parse(localStorage.getItem(KEY));
+  check(Boolean(saved.history.easy[today]), '여러 탭: 다른 탭이 저장해도 성공 기록 유지');
+  await waitFor(() => b.contentDocument.querySelector('#stats').textContent.includes('성공 1일'));
+  check(b.contentDocument.querySelector('#stats').textContent.includes('성공 1일'), '여러 탭: 다른 탭 화면도 최신 기록으로 갱신');
+  a.remove();
+  b.remove();
+}
+
+// 첫 화면이 그려진 뒤 요소가 덜컥 밀리는 정도(CLS). 0.1 미만이면 "좋음" 기준입니다.
+async function loadingChecks() {
+  localStorage.setItem(KEY, JSON.stringify({ version: 2, difficulty: 'hard', progress: {}, history: {} }));
+  const frame = await loadGame(390, 800);
+  const shift = await new Promise(resolve => {
+    let total = 0;
+    new frame.contentWindow.PerformanceObserver(list => {
+      for (const entry of list.getEntries()) if (!entry.hadRecentInput) total += entry.value;
+    }).observe({ type: 'layout-shift', buffered: true });
+    setTimeout(() => resolve(total), 300);
+  });
+  check(shift < 0.1, '첫 화면 레이아웃 흔들림(CLS) 0.1 미만', shift.toFixed(3));
+  check($(frame, '#feedback').textContent.startsWith('남은 불'), '남은 불 개수 안내', $(frame, '#feedback').textContent);
+  check(!$(frame, '.tile').hasAttribute('aria-pressed'), '타일에 혼동되는 aria-pressed 없음');
+}
+
+async function layoutChecks(width, difficulty, height = 1000) {
+  localStorage.setItem(KEY, JSON.stringify({ version: 2, difficulty, progress: {}, history: {} }));
+  const frame = await loadGame(width, height);
+  const doc = frame.contentDocument;
+  const root = doc.documentElement;
+  const tag = `${width}×${height} ${difficulty}`;
+  check(root.scrollWidth <= root.clientWidth, `${tag}: 가로 스크롤 없음`, `${root.scrollWidth} vs ${root.clientWidth}`);
+
+  const items = [...doc.querySelectorAll('#sound, #openRecords, .brand, .difficulty span, #reset, #hint, #share, .tile, .move-counter, #dateTitle, #stats')]
+    .filter(el => el.getClientRects().length) // 숨겨진 요소 제외
+    .map(el => ({ el, r: el.getBoundingClientRect() }));
+  const clashes = [];
+  for (let i = 0; i < items.length; i++) {
+    for (let j = i + 1; j < items.length; j++) {
+      if (overlaps(items[i].r, items[j].r)) clashes.push(`${items[i].el.id || items[i].el.className} × ${items[j].el.id || items[j].el.className}`);
+    }
+  }
+  check(clashes.length === 0, `${tag}: 버튼·타일 겹침 없음`, clashes.slice(0, 3).join(', '));
+  const outside = items.filter(({ r }) => r.left < 0 || r.right > root.clientWidth + 0.5);
+  check(outside.length === 0, `${tag}: 화면 밖으로 나간 요소 없음`);
+  const small = [...doc.querySelectorAll('#reset, #hint, .tile, #sound, .difficulty span')]
+    .filter(el => el.getClientRects().length && el.getBoundingClientRect().height < 36);
+  check(small.length === 0, `${tag}: 터치 대상 높이 36px 이상`, small.map(el => el.id || el.className).join(', '));
+
+  // 기록 창
+  doc.querySelector('#openRecords').click();
+  const dialog = doc.querySelector('#records');
+  const d = dialog.getBoundingClientRect();
+  check(dialog.scrollWidth <= dialog.clientWidth && d.left >= 0 && d.right <= root.clientWidth + 0.5
+    && d.top >= 0 && d.bottom <= frame.contentWindow.innerHeight + 0.5, `${tag}: 기록 창이 화면 안에 들어옴 (넘치면 창 안에서 스크롤)`);
+  const buttons = [...dialog.querySelectorAll('.records-actions button, .month-button, .close-button')].map(el => el.getBoundingClientRect());
+  const clash = buttons.some((a, i) => buttons.some((b, j) => j > i && overlaps(a, b)));
+  check(!clash, `${tag}: 기록 창 버튼 겹침 없음`);
+  dialog.close();
+}
+
+(async () => {
+  const backup = localStorage.getItem(KEY);
+  try {
+    await gameplayChecks();
+    await recordsChecks();
+    await multiTabChecks();
+    await loadingChecks();
+    for (const w of [320, 360, 390, 768, 1280]) for (const d of ['easy', 'hard']) await layoutChecks(w, d);
+    await layoutChecks(740, 'hard', 360); // 휴대폰 가로 모드
+  } catch (e) {
+    check(false, '점검 중 예외 발생', e.message);
+  } finally {
+    if (backup === null) localStorage.removeItem(KEY); else localStorage.setItem(KEY, backup);
+  }
+  lines.push('', failed ? `결과: ${failed}개 실패` : '결과: 모두 통과');
+  const pre = document.querySelector('#result');
+  pre.textContent = lines.join('\n');
+  pre.className = failed ? 'fail' : 'pass';
+  document.title = failed ? 'FAIL' : 'PASS';
+})();
+</script>
+</body>
+</html>

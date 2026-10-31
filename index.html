@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#0b1220" />
+  <meta name="description" content="하루에 하나씩 새로운 불 끄기 퍼즐. 3단계 난이도와 힌트로 누구나 즐길 수 있어요." />
+  <title>Daily Lights | 오늘의 퍼즐</title>
+
+  <!-- 아이콘: 브라우저 탭 / 휴대폰 홈 화면 -->
+  <link rel="icon" href="./icon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="./apple-touch-icon.png" />
+
+  <!-- 링크 공유 미리보기 (카카오톡·SNS). __SITE_URL__ 은 배포할 때 실제 주소로 자동으로 바뀝니다. -->
+  <meta property="og:type" content="website" />
+  <meta property="og:locale" content="ko_KR" />
+  <meta property="og:title" content="Daily Lights · 오늘의 불 끄기 퍼즐" />
+  <meta property="og:description" content="매일 자정 새로운 퍼즐. 최소한의 터치로 모든 불을 꺼 보세요." />
+  <meta property="og:url" content="__SITE_URL__/" />
+  <meta property="og:image" content="__SITE_URL__/og-image.png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta name="twitter:card" content="summary_large_image" />
+
+  <!-- ?v=__VERSION__ 도 배포할 때 바뀝니다. 새 버전을 올리면 브라우저가 옛 파일 대신 새 파일을 받게 하는 장치입니다. -->
+  <link rel="stylesheet" href="./styles.css?v=__VERSION__" />
+</head>
+<body>
+  <main class="app">
+    <header class="topbar">
+      <div class="brand"><span class="brand-icon" aria-hidden="true">✦</span> DAILY LIGHTS</div>
+      <div class="top-actions">
+        <button id="openRecords" class="pill-button" type="button" aria-haspopup="dialog" aria-label="나의 기록">
+          <span aria-hidden="true">📊</span><span class="pill-text">기록</span><span id="streakBadge" class="streak-badge" hidden></span>
+        </button>
+        <button id="sound" class="pill-button sound-toggle" type="button" aria-pressed="true" aria-label="효과음">
+          <span class="sound-icon" aria-hidden="true">🔊</span><span class="sound-text pill-text">소리 켜짐</span>
+        </button>
+      </div>
+    </header>
+
+    <section class="hero">
+      <p class="eyebrow">매일 자정(KST) · 새로운 도전</p>
+      <h1>오늘의 불을<br><span>모두 꺼보세요.</span></h1>
+      <p class="intro">칸을 누르면 그 칸과 위·아래·양옆의 불이 바뀝니다. 최소한의 터치로 모든 불을 끄면 성공!</p>
+    </section>
+
+    <section class="game" aria-label="오늘의 퍼즐">
+      <fieldset class="difficulty">
+        <legend class="sr-only">난이도</legend>
+        <label><input type="radio" name="difficulty" value="easy" /><span>초급 <small>3×3</small><em class="done" hidden>✓<span class="sr-only"> 오늘 완료</span></em></span></label>
+        <label><input type="radio" name="difficulty" value="normal" /><span>중급 <small>4×4</small><em class="done" hidden>✓<span class="sr-only"> 오늘 완료</span></em></span></label>
+        <label><input type="radio" name="difficulty" value="hard" /><span>고급 <small>5×5</small><em class="done" hidden>✓<span class="sr-only"> 오늘 완료</span></em></span></label>
+      </fieldset>
+
+      <div class="game-header">
+        <div><p class="small-label">오늘의 퍼즐</p><h2 id="dateTitle">날짜 불러오는 중…</h2></div>
+        <div class="move-counter">
+          <span>움직임</span><strong id="moves">0</strong><small id="par">최소 -번</small>
+        </div>
+      </div>
+      <div id="board" class="board" role="group" aria-label="퍼즐 보드"></div>
+      <div id="feedback" class="feedback" role="status" aria-live="polite">퍼즐을 준비하고 있어요…</div>
+      <noscript><p class="noscript">이 게임은 JavaScript가 필요해요. 브라우저 설정에서 JavaScript를 켜 주세요.</p></noscript>
+      <div class="actions">
+        <button id="reset" class="secondary" type="button"><span aria-hidden="true">↻</span> 다시 시작</button>
+        <button id="hint" class="hint" type="button"><span aria-hidden="true">💡</span> 힌트<span id="hintCount"></span></button>
+        <button id="share" class="primary" type="button" hidden>결과 공유하기 <span aria-hidden="true">↗</span></button>
+      </div>
+      <p id="stats" class="stats"></p>
+      <p id="footnote" class="footnote">진행 상황과 기록은 이 브라우저에 자동 저장됩니다. 날짜는 한국 표준시(KST) 기준으로 바뀝니다.</p>
+    </section>
+
+    <section class="guide" aria-labelledby="guide-title">
+      <h2 id="guide-title">처음이라면? 게임 방법</h2>
+      <div class="guide-grid">
+        <div class="guide-card">
+          <b>01</b>
+          <div class="mini-board" aria-hidden="true">
+            <i></i><i class="on"></i><i></i>
+            <i class="on"></i><i class="on center"></i><i class="on"></i>
+            <i></i><i class="on"></i><i></i>
+          </div>
+          <p>칸을 누르면 <strong>그 칸과 상하좌우</strong> 4칸이 함께 켜지거나 꺼져요. (십자 모양)</p>
+        </div>
+        <div class="guide-card">
+          <b>02</b>
+          <p><strong>위에서 아래로 정리하기</strong><br>윗줄에 켜진 불이 있으면 <em>바로 아랫칸</em>을 누르세요. 윗줄 불이 꺼져요. 한 줄씩 내려가면 맨 아랫줄만 남아요.</p>
+        </div>
+        <div class="guide-card">
+          <b>03</b>
+          <p><strong>초급부터, 막히면 힌트</strong><br>3×3 초급으로 감을 익혀 보세요. 💡 힌트는 정답으로 가는 다음 칸을 알려 줘요. 힌트 없이 최소 횟수로 풀면 <em>퍼펙트</em>!</p>
+        </div>
+      </div>
+      <p class="keyboard-tip"><span aria-hidden="true">⌨️</span> 키보드: 방향키로 이동 · Enter/Space로 누르기</p>
+    </section>
+
+    <footer>Daily Lights · 학습용 오픈 웹게임 · 개인정보 수집 없음</footer>
+  </main>
+  <!-- 기록 창: 브라우저 기본 <dialog> → Esc로 닫히고 포커스가 창 안에 머뭅니다. -->
+  <dialog id="records" class="records" aria-labelledby="recordsTitle">
+    <div class="records-head">
+      <h2 id="recordsTitle">나의 기록</h2>
+      <button id="closeRecords" class="close-button" type="button" aria-label="기록 창 닫기">✕</button>
+    </div>
+
+    <div class="summary-grid">
+      <div class="summary-tile highlight"><span>현재 연속</span><strong id="streakCurrent">0</strong><small>일 <span aria-hidden="true">🔥</span></small></div>
+      <div class="summary-tile"><span>최고 연속</span><strong id="streakBest">0</strong><small>일</small></div>
+      <div class="summary-tile"><span>성공한 날</span><strong id="totalDays">0</strong><small>일</small></div>
+      <div class="summary-tile"><span>퍼펙트</span><strong id="totalPerfect">0</strong><small>회 <span aria-hidden="true">🌟</span></small></div>
+    </div>
+    <p id="streakNote" class="streak-note"></p>
+
+    <section class="calendar" aria-labelledby="calendarTitle">
+      <div class="calendar-head">
+        <button id="prevMonth" class="month-button" type="button" aria-label="이전 달">‹</button>
+        <h3 id="calendarTitle">2026년 11월</h3>
+        <button id="nextMonth" class="month-button" type="button" aria-label="다음 달">›</button>
+      </div>
+      <div class="weekdays" aria-hidden="true"><span>일</span><span>월</span><span>화</span><span>수</span><span>목</span><span>금</span><span>토</span></div>
+      <ol id="calendarDays" class="calendar-days"></ol>
+      <p class="legend" aria-hidden="true"><i class="dot easy"></i>초급 <i class="dot normal"></i>중급 <i class="dot hard"></i>고급 <b class="star">★</b>퍼펙트 포함</p>
+    </section>
+
+    <table class="difficulty-table">
+      <caption class="sr-only">난이도별 기록</caption>
+      <thead><tr><th scope="col">난이도</th><th scope="col">성공</th><th scope="col">힌트 없이</th><th scope="col">퍼펙트</th></tr></thead>
+      <tbody id="difficultyRows"></tbody>
+    </table>
+
+    <div class="records-actions">
+      <button id="shareToday" class="primary" type="button">오늘의 기록 공유 <span aria-hidden="true">↗</span></button>
+      <button id="exportBackup" class="secondary" type="button"><span aria-hidden="true">⬇</span> 백업 내보내기</button>
+      <button id="importBackup" class="secondary" type="button"><span aria-hidden="true">⬆</span> 백업 불러오기</button>
+      <input id="backupFile" type="file" accept="application/json,.json" hidden />
+    </div>
+    <p id="recordsStatus" class="records-status" role="status" aria-live="polite"></p>
+    <p class="records-help">백업 파일을 다른 기기나 브라우저에서 불러오면 기록이 <strong>합쳐집니다</strong>. 같은 날짜는 더 좋은 기록이 남고, 지금 기록은 지워지지 않아요.</p>
+  </dialog>
+
+  <canvas id="confetti" class="confetti" aria-hidden="true" hidden></canvas>
+  <script src="./logic.js?v=__VERSION__" defer></script>
+  <script src="./records.js?v=__VERSION__" defer></script>
+  <script src="./game.js?v=__VERSION__" defer></script>
+</body>
+</html>

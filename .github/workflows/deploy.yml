@@ -1,0 +1,52 @@
+# main 브랜치에 push 하면: 테스트 → (통과하면) GitHub Pages 에 배포
+# 처음 한 번: GitHub 저장소 Settings → Pages → Source 를 "GitHub Actions" 로 바꿔 주세요.
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: # Actions 탭에서 수동으로도 실행 가능
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm test
+
+  deploy:
+    needs: test # 테스트가 실패하면 배포하지 않습니다.
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: pages
+        uses: actions/configure-pages@v5
+
+      - name: 게임 파일만 모으기 (tests 폴더 등은 공개하지 않음)
+        run: |
+          mkdir _site
+          cp index.html styles.css logic.js records.js game.js icon.svg apple-touch-icon.png og-image.png _site/
+          # 공유 미리보기용 실제 주소와, 캐시 갱신용 버전(커밋 번호 앞 7자리)을 채워 넣습니다.
+          sed -i "s#__SITE_URL__#${{ steps.pages.outputs.base_url }}#g; s#__VERSION__#${GITHUB_SHA::7}#g" _site/index.html
+          if grep -q "__SITE_URL__\|__VERSION__" _site/index.html; then echo "치환되지 않은 값이 남아 있어요" && exit 1; fi
+
+      - uses: actions/upload-pages-artifact@v3
+
+      - id: deployment
+        uses: actions/deploy-pages@v4

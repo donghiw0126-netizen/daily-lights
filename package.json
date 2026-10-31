@@ -1,0 +1,10 @@
+{
+  "name": "daily-lights",
+  "version": "1.0.0",
+  "private": true,
+  "description": "매일 바뀌는 불 끄기 퍼즐 웹게임",
+  "scripts": {
+    "test": "node --test",
+    "start": "py -m http.server 8000"
+  }
+}
