@@ -310,3 +310,69 @@ test('백업 합치기: 새 날짜는 추가, 같은 날짜는 더 좋은 기록
   assert.deepEqual(current.history.hard, { '2026-10-31': { moves: 9, hints: 0, minMoves: 9 } });
   assert.deepEqual(L.mergeHistory(current, incoming), { added: 0, improved: 0 }, '두 번 불러와도 변화 없음');
 });
+
+// ── 지난 퍼즐 다시 풀기 ─────────────────────────────────────
+
+test('지난 퍼즐로 열 수 있는 날짜: 시작일 ~ 어제', () => {
+  const today = '2026-11-01';
+  assert.equal(L.ARCHIVE_START, '2026-10-01');
+  assert.ok(L.isArchiveDate('2026-10-01', today));
+  assert.ok(L.isArchiveDate('2026-10-31', today));
+  for (const bad of ['2026-09-30', today, '2026-11-02', '2026-10-32', 'yesterday']) {
+    assert.ok(!L.isArchiveDate(bad, today), `열면 안 됨: ${bad}`);
+  }
+});
+
+test('나중에 푼 기록(late)은 연속 성공에 넣지 않지만 성공한 날에는 센다', () => {
+  const today = '2026-11-01';
+  const s = L.createStore();
+  s.history.easy['2026-10-31'] = { moves: 4, hints: 0, minMoves: 4 };
+  s.history.easy['2026-10-30'] = { moves: 4, hints: 0, minMoves: 4, late: true }; // 나중에 메꾼 날
+  s.history.easy['2026-10-29'] = { moves: 4, hints: 0, minMoves: 4 };
+  assert.deepEqual(L.streaks(s, today), { current: 1, best: 1, todayCleared: false });
+  assert.deepEqual(L.totalStats(s), { days: 3, perfect: 3 });
+  assert.equal(L.statsFor(s, 'easy').cleared, 3);
+});
+
+test('당일 기록은 나중에 푼 기록으로 덮어쓰지 않는다', () => {
+  const s = L.createStore();
+  const date = '2026-10-20';
+  assert.equal(L.recordResult(s, 'easy', date, { moves: 9, hints: 3, minMoves: 4 }), true);
+  assert.equal(L.recordResult(s, 'easy', date, { moves: 4, hints: 0, minMoves: 4, late: true }), false, '더 좋아도 당일 기록 유지');
+  assert.deepEqual(s.history.easy[date], { moves: 9, hints: 3, minMoves: 4 });
+
+  const other = '2026-10-21';
+  L.recordResult(s, 'easy', other, { moves: 8, hints: 1, minMoves: 4, late: true });
+  assert.equal(L.recordResult(s, 'easy', other, { moves: 5, hints: 0, minMoves: 4, late: true }), true, '나중 기록끼리는 더 좋은 쪽');
+  assert.deepEqual(s.history.easy[other], { moves: 5, hints: 0, minMoves: 4, late: true });
+
+  // 백업 합치기: 다른 기기에서 당일에 푼 기록이 오면 그것이 우선
+  const incoming = L.createStore();
+  incoming.history.easy[other] = { moves: 7, hints: 2, minMoves: 4 };
+  assert.deepEqual(L.mergeHistory(s, incoming), { added: 0, improved: 1 });
+  assert.deepEqual(s.history.easy[other], { moves: 7, hints: 2, minMoves: 4 });
+});
+
+test('지난 퍼즐 진행 상황 저장·복원과 검증', () => {
+  const today = '2026-11-01';
+  const date = '2026-10-15';
+  const { board } = L.generatePuzzle(date, 'normal');
+  L.press(board, 5, 4);
+  const s = L.createStore();
+  s.archive.normal = { date, board, moves: 1, hints: 0 };
+  s.history.normal[date] = { moves: 6, hints: 0, minMoves: 6, late: true };
+  assert.deepEqual(L.parseStore(L.serializeStore(s), today), s);
+
+  const bad = [
+    { date: today, board, moves: 1, hints: 0 },           // 오늘은 지난 퍼즐이 아님
+    { date: '2026-09-01', board, moves: 1, hints: 0 },    // 시작일 이전
+    { date, board: board.slice(0, 9), moves: 1, hints: 0 },
+    { date, board, moves: -1, hints: 0 },
+  ];
+  for (const a of bad) {
+    const parsed = L.parseStore(JSON.stringify({ version: 2, archive: { normal: a } }), today);
+    assert.equal(parsed.archive.normal, undefined, `거부해야 함: ${a.date}`);
+  }
+  const weird = L.parseStore(JSON.stringify({ version: 2, history: { easy: { [date]: { moves: 4, hints: 0, minMoves: 4, late: 'yes' } } } }), today);
+  assert.deepEqual(weird.history.easy, {}, 'late 가 true/false 가 아니면 거부');
+});

@@ -11,6 +11,14 @@
   <link rel="icon" href="./icon.svg" type="image/svg+xml" />
   <link rel="apple-touch-icon" href="./apple-touch-icon.png" />
 
+  <!-- 앱처럼 설치(PWA): 앱 이름·아이콘 정보, 아이폰 홈 화면용 설정 -->
+  <link rel="manifest" href="./manifest.webmanifest" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-title" content="Daily Lights" />
+  <!-- 배포 버전 (배포할 때 커밋 번호로 바뀜). 아직 바뀌지 않았으면 개발 중이라 오프라인 기능을 켜지 않습니다. -->
+  <meta name="app-version" content="__VERSION__" />
+
   <!-- 링크 공유 미리보기 (카카오톡·SNS). __SITE_URL__ 은 배포할 때 실제 주소로 자동으로 바뀝니다. -->
   <meta property="og:type" content="website" />
   <meta property="og:locale" content="ko_KR" />
@@ -53,8 +61,13 @@
         <label><input type="radio" name="difficulty" value="hard" /><span>고급 <small>5×5</small><em class="done" hidden>✓<span class="sr-only"> 오늘 완료</span></em></span></label>
       </fieldset>
 
+      <div id="archiveBar" class="archive-bar" hidden>
+        <span><span aria-hidden="true">📅</span> 지난 퍼즐을 풀고 있어요 · 연속 기록에는 포함되지 않아요</span>
+        <button id="backToToday" class="archive-back" type="button">오늘 퍼즐로 <span aria-hidden="true">↩</span></button>
+      </div>
+
       <div class="game-header">
-        <div><p class="small-label">오늘의 퍼즐</p><h2 id="dateTitle">날짜 불러오는 중…</h2></div>
+        <div><p id="dateLabel" class="small-label">오늘의 퍼즐</p><h2 id="dateTitle">날짜 불러오는 중…</h2></div>
         <div class="move-counter">
           <span>움직임</span><strong id="moves">0</strong><small id="par">최소 -번</small>
         </div>
@@ -70,6 +83,19 @@
       <p id="stats" class="stats"></p>
       <p id="footnote" class="footnote">진행 상황과 기록은 이 브라우저에 자동 저장됩니다. 날짜는 한국 표준시(KST) 기준으로 바뀝니다.</p>
     </section>
+
+    <!-- 앱 설치 안내: 설치할 수 있는 브라우저에서만 나타납니다 (site.js) -->
+    <aside id="installCard" class="install-card" aria-labelledby="installTitle" hidden>
+      <div class="install-icon" aria-hidden="true"><img src="./icon-192.png" alt="" width="44" height="44" /></div>
+      <div class="install-text">
+        <strong id="installTitle">앱처럼 설치하기</strong>
+        <p id="installHelp">홈 화면에서 바로 열고, 인터넷이 없어도 플레이할 수 있어요.</p>
+      </div>
+      <div class="install-actions">
+        <button id="installButton" class="install-button" type="button">설치</button>
+        <button id="installClose" class="install-close" type="button" aria-label="설치 안내 닫기">✕</button>
+      </div>
+    </aside>
 
     <section class="guide" aria-labelledby="guide-title">
       <h2 id="guide-title">처음이라면? 게임 방법</h2>
@@ -95,7 +121,10 @@
       <p class="keyboard-tip"><span aria-hidden="true">⌨️</span> 키보드: 방향키로 이동 · Enter/Space로 누르기</p>
     </section>
 
-    <footer>Daily Lights · 학습용 오픈 웹게임 · 개인정보 수집 없음</footer>
+    <footer>
+      <a class="donate-link" href="#" target="_blank" rel="noopener noreferrer" hidden></a>
+      <p>Daily Lights · 학습용 오픈 웹게임 · <span id="privacyNote">개인정보·쿠키 수집 없음</span></p>
+    </footer>
   </main>
   <!-- 기록 창: 브라우저 기본 <dialog> → Esc로 닫히고 포커스가 창 안에 머뭅니다. -->
   <dialog id="records" class="records" aria-labelledby="recordsTitle">
@@ -120,7 +149,8 @@
       </div>
       <div class="weekdays" aria-hidden="true"><span>일</span><span>월</span><span>화</span><span>수</span><span>목</span><span>금</span><span>토</span></div>
       <ol id="calendarDays" class="calendar-days"></ol>
-      <p class="legend" aria-hidden="true"><i class="dot easy"></i>초급 <i class="dot normal"></i>중급 <i class="dot hard"></i>고급 <b class="star">★</b>퍼펙트 포함</p>
+      <p class="legend" aria-hidden="true"><i class="dot easy"></i>초급 <i class="dot normal"></i>중급 <i class="dot hard"></i>고급 <b class="star">★</b>퍼펙트 포함 <i class="dot easy late"></i>나중에 풂</p>
+      <p class="calendar-tip">날짜를 누르면 그날 퍼즐을 풀 수 있어요. (2026년 10월 1일부터)</p>
     </section>
 
     <table class="difficulty-table">
@@ -137,11 +167,14 @@
     </div>
     <p id="recordsStatus" class="records-status" role="status" aria-live="polite"></p>
     <p class="records-help">백업 파일을 다른 기기나 브라우저에서 불러오면 기록이 <strong>합쳐집니다</strong>. 같은 날짜는 더 좋은 기록이 남고, 지금 기록은 지워지지 않아요.</p>
+    <p class="records-donate"><a class="donate-link" href="#" target="_blank" rel="noopener noreferrer" hidden></a></p>
   </dialog>
 
   <canvas id="confetti" class="confetti" aria-hidden="true" hidden></canvas>
   <script src="./logic.js?v=__VERSION__" defer></script>
   <script src="./records.js?v=__VERSION__" defer></script>
   <script src="./game.js?v=__VERSION__" defer></script>
+  <script src="./site-config.js?v=__VERSION__" defer></script>
+  <script src="./site.js?v=__VERSION__" defer></script>
 </body>
 </html>

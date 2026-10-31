@@ -246,6 +246,124 @@ async function loadingChecks() {
   check(!$(frame, '.tile').hasAttribute('aria-pressed'), '타일에 혼동되는 aria-pressed 없음');
 }
 
+// 기록 창 달력에서 date 칸을 찾아 누릅니다. (필요하면 이전 달로 이동)
+function openFromCalendar(frame, date) {
+  const doc = frame.contentDocument;
+  if (!doc.querySelector('#records').open) doc.querySelector('#openRecords').click();
+  const title = `${Number(date.slice(0, 4))}년 ${Number(date.slice(5, 7))}월`;
+  for (let i = 0; i < 24 && doc.querySelector('#calendarTitle').textContent !== title; i++) doc.querySelector('#prevMonth').click();
+  const prefix = `${Number(date.slice(5, 7))}월 ${Number(date.slice(8))}일 `;
+  const button = [...doc.querySelectorAll('#calendarDays button.day')]
+    .find(b => b.querySelector('.sr-only').textContent.startsWith(prefix));
+  if (button) button.click();
+  return button;
+}
+
+// 지난 퍼즐 다시 풀기
+async function archiveChecks() {
+  localStorage.removeItem(KEY);
+  const frame = await loadGame(320, 900);
+  const Logic = frame.contentWindow.DailyLightsLogic;
+  const today = Logic.dateKeyKST();
+  const back17 = Logic.addDays(today, -17);
+  const date = back17 >= Logic.ARCHIVE_START ? back17 : Logic.ARCHIVE_START;
+  const text = sel => $(frame, sel).textContent;
+
+  check(Boolean(openFromCalendar(frame, date)), '달력의 지난 날짜는 누를 수 있는 버튼', date);
+  check(!$(frame, '#records').open, '날짜를 누르면 기록 창이 닫힘');
+  check(text('#dateTitle') === date && text('#dateLabel') === '지난 퍼즐' && !$(frame, '#archiveBar').hidden,
+    '지난 퍼즐 열림 + 안내줄 표시', `${text('#dateLabel')} ${text('#dateTitle')}`);
+  check(String(state(frame).board) === String(Logic.generatePuzzle(date, 'easy').board), '그 날짜의 퍼즐과 같은 보드');
+
+  const root = frame.contentDocument.documentElement;
+  const bar = $(frame, '#archiveBar').getBoundingClientRect();
+  const back = $(frame, '#backToToday').getBoundingClientRect();
+  check(root.scrollWidth <= root.clientWidth && bar.right <= root.clientWidth && back.right <= bar.right && back.height >= 36,
+    '320px: 지난 퍼즐 안내줄이 화면 안에 들어옴');
+
+  tiles(frame)[0].click();
+  const mid = state(frame);
+  await reload(frame);
+  check(text('#dateTitle') === today && $(frame, '#archiveBar').hidden, '새로고침하면 오늘 퍼즐부터 시작');
+  check(state(frame).moves === 0, '지난 퍼즐을 눌러도 오늘 진행 상황은 그대로');
+  openFromCalendar(frame, date);
+  check(state(frame).moves === 1 && String(state(frame).board) === String(mid.board), '같은 날짜를 다시 열면 이어서 하기');
+
+  for (const i of Logic.solve(state(frame).board, 3)) tiles(frame)[i].click();
+  check(state(frame).feedback.includes('지난 퍼즐 기록으로 저장'), '지난 퍼즐 성공 메시지', state(frame).feedback);
+  const saved = JSON.parse(localStorage.getItem(KEY));
+  check(saved.history.easy[date] && saved.history.easy[date].late === true, '기록에 "나중에 풂(late)" 표시');
+  check($(frame, '#streakBadge').hidden, '지난 퍼즐 성공은 연속 기록(🔥)에 포함되지 않음');
+  check(!$(frame, 'input[value="easy"] + span .done').hidden, '난이도 탭 ✓는 보고 있는 날짜 기준');
+
+  $(frame, '#openRecords').click();
+  const cell = [...frame.contentDocument.querySelectorAll('#calendarDays button.day')]
+    .find(b => b.querySelector('.sr-only').textContent.startsWith(`${Number(date.slice(5, 7))}월 ${Number(date.slice(8))}일 `));
+  check(cell && cell.querySelector('.dot.late') && cell.classList.contains('playing') && cell.querySelector('.sr-only').textContent.includes('나중에 풂'),
+    '달력: 속이 빈 점 + 지금 푸는 날짜 강조 + 화면 읽기 설명');
+  frame.contentDocument.querySelector('#closeRecords').click();
+
+  $(frame, '#backToToday').click();
+  check(text('#dateTitle') === today && $(frame, '#archiveBar').hidden && text('#dateLabel') === '오늘의 퍼즐', '"오늘 퍼즐로" 버튼으로 돌아오기');
+}
+
+// 앱 설치(PWA) — 개발 환경: 서비스 워커가 켜지면 고친 코드 대신 옛 파일이 보이므로 꺼져 있어야 함
+async function pwaDevChecks() {
+  const frame = await loadGame(320, 900);
+  const win = frame.contentWindow;
+  check(!win.DailyLightsSite.isDeployedBuild(), '개발 중(버전 미치환)으로 인식');
+  const registration = win.navigator.serviceWorker ? await win.navigator.serviceWorker.getRegistration() : undefined;
+  check(!registration, '개발 중에는 서비스 워커를 등록하지 않음');
+  check($(frame, '#installCard').hidden, '개발 중에는 설치 안내 카드 숨김');
+  check($(frame, 'link[rel="manifest"]') !== null, 'manifest 연결');
+
+  // 설치 카드 레이아웃 (안드로이드: 설치 버튼 / 아이폰: 방법 안내)
+  for (const mode of ['prompt', 'ios']) {
+    win.DailyLightsSite.showInstall(mode);
+    const root = frame.contentDocument.documentElement;
+    const card = $(frame, '#installCard').getBoundingClientRect();
+    const buttons = [...frame.contentDocument.querySelectorAll('#installCard button')].filter(b => !b.hidden).map(b => b.getBoundingClientRect());
+    const clash = buttons.some((a, i) => buttons.some((b, j) => j > i && overlaps(a, b)));
+    check(!$(frame, '#installCard').hidden && root.scrollWidth <= root.clientWidth && card.right <= root.clientWidth && !clash,
+      `320px: 설치 카드(${mode}) 화면 안에 들어오고 버튼 겹침 없음`);
+  }
+  check($(frame, '#installHelp').textContent.includes('홈 화면에 추가') && $(frame, '#installButton').hidden, '아이폰: 설치 방법 안내, 설치 버튼 숨김');
+  $(frame, '#installClose').click();
+  check($(frame, '#installCard').hidden && localStorage.getItem('daily-lights-install-dismissed') === '1', '✕ 누르면 닫히고 다시 보지 않기 저장');
+  localStorage.removeItem('daily-lights-install-dismissed');
+}
+
+// 후원 버튼과 방문자 통계 (site.js)
+async function siteChecks() {
+  const frame = await loadGame(390, 800);
+  const win = frame.contentWindow;
+  const links = () => [...frame.contentDocument.querySelectorAll('.donate-link')];
+  const fresh = !win.DailyLightsConfig.donationUrl && !win.DailyLightsConfig.cloudflareAnalyticsToken;
+  if (fresh) {
+    check(links().every(a => a.hidden), '설정이 비어 있으면 후원 버튼 숨김');
+    check(!frame.contentDocument.querySelector('script[src*="cloudflareinsights"]'), '설정이 비어 있으면 통계 스크립트 없음');
+  }
+
+  // 실제 Cloudflare 로 요청이 나가지 않도록, head 에 붙이는 동작만 가로채서 확인합니다.
+  const injected = [];
+  const realAppend = win.document.head.appendChild.bind(win.document.head);
+  win.document.head.appendChild = node => (node.src && node.src.includes('cloudflareinsights') ? injected.push(node) : realAppend(node));
+  const token = '0123456789abcdef0123456789abcdef';
+
+  check(win.DailyLightsSite.apply({ donationUrl: 'https://toss.me/test' }, 'example.github.io') === false
+    && links().every(a => !a.hidden && a.href === 'https://toss.me/test' && a.rel.includes('noopener')), '후원 주소를 넣으면 버튼 표시 (새 창, noopener)');
+  for (const bad of ['javascript:alert(1)', 'http://toss.me/test', 'toss.me/test']) {
+    win.DailyLightsSite.apply({ donationUrl: bad }, 'example.github.io');
+    check(links().every(a => a.hidden), `안전하지 않은 후원 주소는 무시: ${bad}`);
+  }
+  check(win.DailyLightsSite.apply({ cloudflareAnalyticsToken: token }, 'localhost') === false && injected.length === 0, '내 PC(localhost)에서는 통계를 보내지 않음');
+  check(win.DailyLightsSite.apply({ cloudflareAnalyticsToken: 'bad token!' }, 'example.github.io') === false, '이상한 토큰이면 통계 끔');
+  const started = win.DailyLightsSite.apply({ cloudflareAnalyticsToken: token }, 'example.github.io');
+  check(started && injected.length === 1 && JSON.parse(injected[0].getAttribute('data-cf-beacon')).token === token,
+    '배포 주소에서는 Cloudflare 통계 스크립트 연결');
+  check(frame.contentDocument.querySelector('#privacyNote').textContent.includes('쿠키 없는'), '통계를 켜면 하단 안내 문구도 바뀜');
+}
+
 async function layoutChecks(width, difficulty, height = 1000) {
   localStorage.setItem(KEY, JSON.stringify({ version: 2, difficulty, progress: {}, history: {} }));
   const frame = await loadGame(width, height);
@@ -289,6 +407,9 @@ async function layoutChecks(width, difficulty, height = 1000) {
     await recordsChecks();
     await multiTabChecks();
     await loadingChecks();
+    await siteChecks();
+    await archiveChecks();
+    await pwaDevChecks();
     for (const w of [320, 360, 390, 768, 1280]) for (const d of ['easy', 'hard']) await layoutChecks(w, d);
     await layoutChecks(740, 'hard', 360); // 휴대폰 가로 모드
   } catch (e) {

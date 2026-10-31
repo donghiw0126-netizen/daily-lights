@@ -11,7 +11,7 @@ window.DailyLightsRecords = (function () {
   const calendarDaysEl = $('#calendarDays');
   const statusEl = $('#recordsStatus');
 
-  let app = null;  // { getStore, getToday, share, onImport }
+  let app = null;  // { getStore, getToday, getPlayDate, share, onImport, openDate }
   let viewYear = 0;
   let viewMonth = 0; // 1~12
 
@@ -65,11 +65,21 @@ window.DailyLightsRecords = (function () {
         .filter(x => x.result);
       const day = Number(date.slice(8));
       const weekday = WEEKDAYS[(firstWeekday + day - 1) % 7];
-      const cell = document.createElement('li');
+      // 오늘과 지난 퍼즐 날짜는 눌러서 열 수 있는 버튼, 나머지(미래·시작일 이전)는 그냥 칸
+      const playable = date === today || Logic.isArchiveDate(date, today);
+      const item = document.createElement('li');
+      const cell = document.createElement(playable ? 'button' : 'div');
+      if (playable) {
+        cell.type = 'button';
+        cell.addEventListener('click', () => { close(); app.openDate(date); });
+      }
       cell.className = 'day';
+      cell.classList.toggle('playable', playable);
       cell.classList.toggle('cleared', results.length > 0);
       cell.classList.toggle('today', date === today);
+      cell.classList.toggle('playing', date === app.getPlayDate());
       cell.classList.toggle('future', date > today);
+      item.appendChild(cell);
 
       const num = document.createElement('span');
       num.className = 'num';
@@ -78,9 +88,10 @@ window.DailyLightsRecords = (function () {
       const dots = document.createElement('span');
       dots.className = 'dots';
       dots.setAttribute('aria-hidden', 'true');
-      for (const { id } of results) {
+      for (const { id, result } of results) {
         const dot = document.createElement('i');
         dot.className = `dot ${id}`;
+        dot.classList.toggle('late', Boolean(result.late)); // 나중에 푼 날은 속이 빈 점
         dots.appendChild(dot);
       }
       cell.append(num, dots);
@@ -95,22 +106,27 @@ window.DailyLightsRecords = (function () {
       // 화면 읽기 프로그램용 설명: "11월 1일 일요일 (오늘): 초급 퍼펙트, 고급 성공"
       // (aria-label 보다 숨김 글자가 여러 화면 읽기 프로그램에서 더 확실하게 읽힙니다)
       const summary = results.length
-        ? results.map(({ id, result }) => `${Logic.DIFFICULTIES[id].label} ${Logic.isPerfect(result) ? '퍼펙트' : '성공'}`).join(', ')
+        ? results.map(({ id, result }) => {
+          const label = `${Logic.DIFFICULTIES[id].label} ${Logic.isPerfect(result) ? '퍼펙트' : '성공'}`;
+          return result.late ? `${label}(나중에 풂)` : label;
+        }).join(', ')
         : '기록 없음';
       const description = document.createElement('span');
       description.className = 'sr-only';
-      description.textContent = `${viewMonth}월 ${day}일 ${weekday}요일${date === today ? ' (오늘)' : ''}: ${summary}`;
+      description.textContent = `${viewMonth}월 ${day}일 ${weekday}요일${date === today ? ' (오늘)' : ''}: ${summary}`
+        + (playable ? '. 눌러서 퍼즐 열기' : '');
       cell.appendChild(description);
-      cells.push(cell);
+      cells.push(item);
     }
     calendarDaysEl.replaceChildren(...cells);
 
-    // 이동 범위: 첫 기록이 있는 달 ~ 이번 달
+    // 이동 범위: (지난 퍼즐 시작일과 첫 기록 중 이른 달) ~ 이번 달
     const thisMonth = today.slice(0, 7);
     const firstRecord = [...Logic.clearedDates(store)].sort()[0] || today;
+    const earliest = firstRecord < Logic.ARCHIVE_START ? firstRecord : Logic.ARCHIVE_START;
     const shown = `${viewYear}-${String(viewMonth).padStart(2, '0')}`;
     $('#nextMonth').disabled = shown >= thisMonth;
-    $('#prevMonth').disabled = shown <= firstRecord.slice(0, 7);
+    $('#prevMonth').disabled = shown <= earliest.slice(0, 7);
   }
 
   function moveMonth(delta) {
@@ -128,7 +144,7 @@ window.DailyLightsRecords = (function () {
   // ── 열기·닫기 ───────────────────────────────────────────
 
   function open() {
-    [viewYear, viewMonth] = app.getToday().split('-').map(Number);
+    [viewYear, viewMonth] = app.getPlayDate().split('-').map(Number); // 지금 풀고 있는 날짜의 달부터
     setStatus('');
     render();
     if (typeof dialog.showModal === 'function') dialog.showModal();

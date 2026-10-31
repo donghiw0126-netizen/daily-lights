@@ -19,6 +19,8 @@
   };
   const DIFFICULTY_IDS = Object.keys(DIFFICULTIES);
   const DEFAULT_DIFFICULTY = 'easy';
+  // 지난 퍼즐은 이 날짜부터 풀 수 있습니다. (바꾸면 달력에서 열 수 있는 범위가 바뀝니다)
+  const ARCHIVE_START = '2026-10-01';
 
   function isDifficulty(id) {
     return Object.prototype.hasOwnProperty.call(DIFFICULTIES, id);
@@ -183,30 +185,47 @@
   //   version: 2,
   //   difficulty: 'easy',                                      마지막으로 고른 난이도
   //   progress: { easy: { date, board, moves, hints } },       오늘 진행 중인 판
-  //   history:  { easy: { '2026-11-01': { moves, hints, minMoves } } }  날짜별 최고 기록
+  //   archive:  { easy: { date, board, moves, hints } },       지난 퍼즐 진행 중인 판 (난이도마다 1개)
+  //   history:  { easy: { '2026-11-01': { moves, hints, minMoves, late? } } }  날짜별 최고 기록
+  //             late: true = 그날이 지난 뒤에 푼 기록 (연속 성공에는 포함되지 않음)
   // }
 
   function createStore() {
-    const store = { version: 2, difficulty: DEFAULT_DIFFICULTY, progress: {}, history: {} };
+    const store = { version: 2, difficulty: DEFAULT_DIFFICULTY, progress: {}, archive: {}, history: {} };
     for (const id of DIFFICULTY_IDS) store.history[id] = {};
     return store;
   }
 
+  // 지난 퍼즐로 열 수 있는 날짜인가? (ARCHIVE_START 이후 ~ 어제)
+  function isArchiveDate(date, today) {
+    return isValidDate(date) && date >= ARCHIVE_START && date < today;
+  }
+
   const isCount = (v, min = 0) => Number.isSafeInteger(v) && v >= min && v <= MAX_SAVED_COUNT;
 
-  function validProgress(p, difficulty, today) {
+  function validBoardState(p, difficulty) {
     const { size } = DIFFICULTIES[difficulty];
-    return !!p && p.date === today
-      && Array.isArray(p.board) && p.board.length === size * size
+    return !!p && Array.isArray(p.board) && p.board.length === size * size
       && p.board.every(v => typeof v === 'boolean')
       && isCount(p.moves) && isCount(p.hints)
       && solve(p.board, size) !== null; // 정상 플레이로는 나올 수 없는 보드는 거부
   }
+  const validProgress = (p, difficulty, today) => validBoardState(p, difficulty) && p.date === today;
+  const validArchive = (p, difficulty, today) => validBoardState(p, difficulty) && isArchiveDate(p.date, today);
+  const copyBoardState = p => ({ date: p.date, board: p.board.slice(), moves: p.moves, hints: p.hints });
 
   function validResult(r, difficulty) {
     const { size } = DIFFICULTIES[difficulty];
     return !!r && isCount(r.moves, 1) && isCount(r.hints)
-      && Number.isSafeInteger(r.minMoves) && r.minMoves >= 1 && r.minMoves <= size * size;
+      && Number.isSafeInteger(r.minMoves) && r.minMoves >= 1 && r.minMoves <= size * size
+      && (r.late === undefined || typeof r.late === 'boolean');
+  }
+
+  // 기록 한 개를 정해진 모양으로 복사 (late 는 true 일 때만 남김)
+  function copyResult(r) {
+    const result = { moves: r.moves, hints: r.hints, minMoves: r.minMoves };
+    if (r.late === true) result.late = true;
+    return result;
   }
 
   // 저장 문자열을 읽어 항상 "쓸 수 있는" store 를 돌려줍니다. 절대 예외를 던지지 않습니다.
@@ -224,15 +243,13 @@
     if (isDifficulty(data.difficulty)) store.difficulty = data.difficulty;
     for (const id of DIFFICULTY_IDS) {
       const p = data.progress && data.progress[id];
-      if (validProgress(p, id, today)) {
-        store.progress[id] = { date: p.date, board: p.board.slice(), moves: p.moves, hints: p.hints };
-      }
+      if (validProgress(p, id, today)) store.progress[id] = copyBoardState(p);
+      const a = data.archive && data.archive[id];
+      if (validArchive(a, id, today)) store.archive[id] = copyBoardState(a);
       const days = data.history && data.history[id];
       if (days && typeof days === 'object') {
         for (const [date, r] of Object.entries(days)) {
-          if (isValidDate(date) && validResult(r, id)) {
-            store.history[id][date] = { moves: r.moves, hints: r.hints, minMoves: r.minMoves };
-          }
+          if (isValidDate(date) && validResult(r, id)) store.history[id][date] = copyResult(r);
         }
       }
     }
@@ -248,9 +265,12 @@
     return result.hints === 0 && result.moves === result.minMoves;
   }
 
-  // 더 좋은 기록인가? 힌트를 덜 쓴 쪽 → 같으면 움직임이 적은 쪽
+  // 더 좋은 기록인가?
+  // 1) 당일에 푼 기록이 나중에 푼 기록보다 항상 우선 (지난 퍼즐로 당일 기록을 덮어쓰지 않음)
+  // 2) 힌트를 덜 쓴 쪽 → 3) 같으면 움직임이 적은 쪽
   function isBetterResult(next, prev) {
     if (!prev) return true;
+    if (Boolean(next.late) !== Boolean(prev.late)) return !next.late;
     if (next.hints !== prev.hints) return next.hints < prev.hints;
     return next.moves < prev.moves;
   }
@@ -259,7 +279,7 @@
   function recordResult(store, difficulty, date, result) {
     const days = store.history[difficulty];
     const isNewBest = isBetterResult(result, days[date]);
-    if (isNewBest) days[date] = { moves: result.moves, hints: result.hints, minMoves: result.minMoves };
+    if (isNewBest) days[date] = copyResult(result);
     return isNewBest;
   }
 
@@ -275,18 +295,21 @@
 
   // ── 연속 기록과 전체 통계 ────────────────────────────────
 
-  // 어느 난이도든 하나라도 성공한 날짜들
-  function clearedDates(store) {
+  // 어느 난이도든 하나라도 성공한 날짜들 (onTimeOnly: 당일에 푼 기록만)
+  function clearedDates(store, onTimeOnly = false) {
     const dates = new Set();
-    for (const id of DIFFICULTY_IDS) for (const date of Object.keys(store.history[id])) dates.add(date);
+    for (const id of DIFFICULTY_IDS) {
+      for (const [date, r] of Object.entries(store.history[id])) if (!onTimeOnly || !r.late) dates.add(date);
+    }
     return dates;
   }
 
   // current: 지금 이어지고 있는 연속 성공 일수
   //   오늘 아직 안 풀었으면 어제까지 센 값 (오늘 자정까지는 연속이 끊기지 않은 것으로 봄)
   // best: 지금까지 가장 길었던 연속 성공 일수
+  // 지난 퍼즐을 나중에 푼 기록(late)은 연속에 넣지 않습니다.
   function streaks(store, today) {
-    const days = clearedDates(store);
+    const days = clearedDates(store, true);
     const todayCleared = days.has(today);
     let current = 0;
     for (let d = todayCleared ? today : addDays(today, -1); days.has(d); d = addDays(d, -1)) current++;
@@ -350,14 +373,14 @@
         if (!existing) added++;
         else if (isBetterResult(result, existing)) improved++;
         else continue;
-        target.history[id][date] = { ...result };
+        target.history[id][date] = copyResult(result);
       }
     }
     return { added, improved };
   }
 
   return {
-    DIFFICULTIES, DIFFICULTY_IDS, DEFAULT_DIFFICULTY, isDifficulty,
+    DIFFICULTIES, DIFFICULTY_IDS, DEFAULT_DIFFICULTY, ARCHIVE_START, isDifficulty, isArchiveDate,
     dateKeyKST, msUntilNextKSTMidnight, addDays, isValidDate, monthDays,
     seedFromString, seededRandom,
     affected, press, isSolved, solve, hint, generatePuzzle,

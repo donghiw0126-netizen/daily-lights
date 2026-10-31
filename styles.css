@@ -263,6 +263,69 @@ button:focus-visible { outline: 3px solid #fff; outline-offset: 2px; }
 .keyboard-tip { text-align: center; color: var(--faint); font-size: 12px; margin-top: 16px; }
 
 footer { text-align: center; color: var(--faint); font-size: 11px; padding: 0 0 28px; }
+footer p { margin: 0; }
+
+/* 후원 버튼 (site-config.js 에 주소가 있을 때만 보임) */
+.donate-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 40px;
+  padding: 8px 16px;
+  margin-bottom: 14px;
+  border: 1px solid #5a4c2a;
+  border-radius: 100px;
+  background: #2a2a1f;
+  color: #ffe2a3;
+  font-size: 13px;
+  font-weight: 700;
+  text-decoration: none;
+}
+.donate-link:focus-visible { outline: 3px solid #fff; outline-offset: 2px; }
+.records-donate { text-align: center; margin: 14px 0 0; }
+.records-donate .donate-link { margin-bottom: 0; }
+@media (hover: hover) { .donate-link:hover { background: #3a3424; } }
+
+/* 앱 설치 안내 카드 (설치할 수 있을 때만 보임) */
+.install-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: 514px;
+  margin: 18px auto 0;
+  padding: 12px 12px 12px 14px;
+  border: 1px solid #2e5a4a;
+  border-radius: 16px;
+  background: #13261f;
+}
+.install-icon img { display: block; border-radius: 10px; }
+.install-text { flex: 1; min-width: 0; }
+.install-text strong { font-size: 14px; }
+.install-text p { margin: 3px 0 0; font-size: 12px; line-height: 1.5; color: var(--muted); word-break: keep-all; }
+.install-actions { display: flex; align-items: center; gap: 6px; }
+.install-button {
+  min-height: 40px;
+  padding: 8px 16px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--mint);
+  color: #102b25;
+  font-weight: 750;
+  cursor: pointer;
+}
+.install-close {
+  width: 36px;
+  height: 36px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+/* 설치된 앱으로 열었을 때: 아이폰 노치·홈 바 영역 피하기 */
+@media (display-mode: standalone) {
+  .topbar { padding-top: max(24px, env(safe-area-inset-top)); }
+}
 
 /* ── 기록 창 ──────────────────────────────────── */
 .records {
@@ -313,25 +376,70 @@ footer { text-align: center; color: var(--faint); font-size: 11px; padding: 0 0 
 .weekdays span:first-child { color: #ff9c9c; }
 .calendar-days { list-style: none; margin: 0; padding: 0; }
 .calendar-days li { position: relative; aspect-ratio: 1; border-radius: 9px; }
+/* 날짜 칸: 칸(li) 안을 꽉 채우는 div 또는 button (오늘·지난 퍼즐 날짜는 button) */
 .calendar-days .day {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 9px;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 3px;
   background: #101a29;
+  font: inherit;
   font-size: 12px;
   color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
+.calendar-days .day.playable { cursor: pointer; }
 .calendar-days .day.cleared { background: #17322a; color: var(--text); font-weight: 700; }
 .calendar-days .day.today { box-shadow: inset 0 0 0 2px var(--mint); }
+.calendar-days .day.playing { box-shadow: inset 0 0 0 2px #ffd27a; } /* 지금 풀고 있는 날짜 */
 .calendar-days .day.future { opacity: .35; }
+.calendar-days .day:focus-visible { outline: 3px solid #fff; outline-offset: 1px; }
+@media (hover: hover) { .calendar-days .day.playable:hover { filter: brightness(1.25); } }
 .calendar-days .dots { display: flex; gap: 2px; min-height: 6px; }
 .calendar-days .star { position: absolute; top: 2px; right: 4px; font-size: 9px; color: #ffd27a; }
-.legend { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 4px 10px; margin: 10px 0 16px; font-size: 11px; color: var(--muted); }
+.dot.late { background: transparent; box-shadow: inset 0 0 0 1.5px var(--mint); }
+.dot.normal.late { box-shadow: inset 0 0 0 1.5px #5fd3ff; }
+.dot.hard.late { box-shadow: inset 0 0 0 1.5px #ffd27a; }
+.legend { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 4px 10px; margin: 10px 0 6px; font-size: 11px; color: var(--muted); }
 .legend .dot { margin-right: -6px; }
 .legend .star { color: #ffd27a; margin-right: -6px; font-size: 11px; }
+.calendar-tip { margin: 0 0 16px; font-size: 11px; color: var(--faint); text-align: center; word-break: keep-all; }
+
+/* 지난 퍼즐 안내줄 */
+.archive-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: -6px 0 18px;
+  padding: 8px 8px 8px 12px;
+  border: 1px solid #5a4c2a;
+  border-radius: 12px;
+  background: #2a2a1f;
+  color: #ffe2a3;
+  font-size: 12px;
+  line-height: 1.5;
+  word-break: keep-all;
+}
+.archive-back {
+  flex: none;
+  min-height: 36px;
+  padding: 6px 12px;
+  border: 0;
+  border-radius: 9px;
+  background: #ffd27a;
+  color: #2a2110;
+  font-size: 12px;
+  font-weight: 750;
+  cursor: pointer;
+}
 
 .difficulty-table { width: 100%; border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; }
 .difficulty-table th, .difficulty-table td { padding: 8px 4px; text-align: center; border-bottom: 1px solid #222f43; }

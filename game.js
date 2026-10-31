@@ -24,6 +24,9 @@ const streakBadgeEl = document.querySelector('#streakBadge');
 const hintCountEl = document.querySelector('#hintCount');
 const footnoteEl = document.querySelector('#footnote');
 const confettiEl = document.querySelector('#confetti');
+const dateLabelEl = document.querySelector('#dateLabel');
+const archiveBarEl = document.querySelector('#archiveBar');
+const backToTodayEl = document.querySelector('#backToToday');
 const difficultyInputs = document.querySelectorAll('input[name="difficulty"]');
 
 const STORE_KEY = 'daily-lights-v2';
@@ -34,8 +37,9 @@ const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
 
 let store = Logic.createStore(); // 난이도별 진행 상황 + 기록 (logic.js 참고)
 let todayKey = '';
+let playDate = '';   // 지금 풀고 있는 퍼즐의 날짜 (보통 오늘, 달력에서 고르면 지난 날짜)
 let difficulty = Logic.DEFAULT_DIFFICULTY;
-let puzzle = null;   // { board, size, minMoves } 오늘의 시작 보드
+let puzzle = null;   // { board, size, minMoves } 지금 퍼즐의 시작 보드
 let size = 0;
 let board = [];
 let moves = 0;
@@ -73,12 +77,22 @@ function saveStore() {
   Logic.mergeHistory(store, latest);
   for (const id of Logic.DIFFICULTY_IDS) {
     if (id !== difficulty && latest.progress[id]) store.progress[id] = latest.progress[id];
+    if (id !== difficulty && latest.archive[id]) store.archive[id] = latest.archive[id];
   }
   store.difficulty = difficulty;
   storageSet(STORE_KEY, Logic.serializeStore(store));
 }
+
+// 지금 지난 퍼즐을 풀고 있는가?
+function isArchive() {
+  return playDate !== todayKey;
+}
+
+// 진행 상황 저장: 오늘 퍼즐은 progress, 지난 퍼즐은 archive 에 (난이도마다 1개씩)
 function persist() {
-  store.progress[difficulty] = { date: todayKey, board, moves, hints };
+  const state = { date: playDate, board, moves, hints };
+  if (isArchive()) store.archive[difficulty] = state;
+  else store.progress[difficulty] = state;
   saveStore();
 }
 
@@ -174,13 +188,14 @@ function paint(message) {
 function paintRecords() {
   difficultyInputs.forEach(input => {
     input.checked = input.value === difficulty;
-    const clearedToday = Boolean(store.history[input.value][todayKey]);
-    input.closest('label').querySelector('.done').hidden = !clearedToday;
+    const cleared = Boolean(store.history[input.value][playDate]); // 지금 보고 있는 날짜 기준
+    input.closest('label').querySelector('.done').hidden = !cleared;
   });
   const { label } = Logic.DIFFICULTIES[difficulty];
   const stats = Logic.statsFor(store, difficulty);
-  const best = store.history[difficulty][todayKey];
-  const bestText = best ? ` · 오늘 최고 ${best.moves}번${best.hints ? `(힌트 ${best.hints})` : ''}` : '';
+  const best = store.history[difficulty][playDate];
+  const bestLabel = isArchive() ? '이 날 최고' : '오늘 최고';
+  const bestText = best ? ` · ${bestLabel} ${best.moves}번${best.hints ? `(힌트 ${best.hints})` : ''}` : '';
   statsEl.textContent = `${label} 기록 · 성공 ${stats.cleared}일 · 퍼펙트 ${stats.perfect}일${bestText}`;
 
   // 상단 기록 버튼의 🔥 연속 일수
@@ -242,8 +257,12 @@ function handlePress(index) {
   let message;
   if (solved) {
     const wasClearedToday = Logic.streaks(store, todayKey).todayCleared;
-    const isNewBest = Logic.recordResult(store, difficulty, todayKey, { moves, hints, minMoves: puzzle.minMoves });
-    if (!isNewBest) message = `${winMessage()} 오늘 최고 기록은 그대로예요.`;
+    const result = { moves, hints, minMoves: puzzle.minMoves };
+    if (isArchive()) result.late = true; // 지난 퍼즐 기록은 연속 성공에 넣지 않음
+    const isNewBest = Logic.recordResult(store, difficulty, playDate, result);
+    if (isArchive()) {
+      message = `${winMessage()} ${isNewBest ? '지난 퍼즐 기록으로 저장했어요.' : '이 날의 기록은 그대로예요.'}`;
+    } else if (!isNewBest) message = `${winMessage()} 오늘 최고 기록은 그대로예요.`;
     else if (!wasClearedToday) { // 오늘 첫 성공이면 연속 기록을 축하
       const { current } = Logic.streaks(store, todayKey);
       if (current > 1) message = `${winMessage()} 🔥 ${current}일 연속 성공!`;
@@ -296,19 +315,34 @@ function resetPuzzle() {
   boardEl.children[focusIndex].focus();
 }
 
-// 현재 난이도의 오늘 퍼즐을 열고, 저장된 진행 상황이 있으면 이어서 합니다.
+// playDate·난이도의 퍼즐을 열고, 저장된 진행 상황이 있으면 이어서 합니다.
 function loadPuzzle(message) {
-  puzzle = Logic.generatePuzzle(todayKey, difficulty);
+  if (isArchive() && !Logic.isArchiveDate(playDate, todayKey)) playDate = todayKey; // 범위를 벗어나면 오늘로
+  puzzle = Logic.generatePuzzle(playDate, difficulty);
   if (puzzle.size !== size) focusIndex = Math.floor((puzzle.size * puzzle.size) / 2); // 크기가 바뀌면 가운데 칸부터
   size = puzzle.size;
-  const saved = store.progress[difficulty];
+  const archived = store.archive[difficulty];
+  const saved = isArchive() ? (archived && archived.date === playDate ? archived : null) : store.progress[difficulty];
   board = saved ? saved.board.slice() : puzzle.board.slice();
   moves = saved ? saved.moves : 0;
   hints = saved ? saved.hints : 0;
   solved = Logic.isSolved(board);
   hintIndex = null;
+
+  dateEl.textContent = playDate;
+  dateLabelEl.textContent = isArchive() ? '지난 퍼즐' : '오늘의 퍼즐';
+  archiveBarEl.hidden = !isArchive();
   buildBoard();
   paint(message);
+}
+
+// 달력에서 날짜를 골랐을 때 (records.js 에서 호출). 오늘이나 범위 밖 날짜면 오늘 퍼즐로.
+function openDate(date) {
+  if (refreshIfNewDay()) return;
+  playDate = Logic.isArchiveDate(date, todayKey) ? date : todayKey;
+  loadPuzzle(isArchive() ? `📅 ${playDate} 퍼즐을 열었어요.` : '오늘의 퍼즐로 돌아왔어요.');
+  boardEl.children[focusIndex].focus({ preventScroll: true });
+  document.querySelector('.game').scrollIntoView({ behavior: reducedMotion.matches ? 'auto' : 'smooth', block: 'start' });
 }
 
 function changeDifficulty(next) {
@@ -322,9 +356,9 @@ function changeDifficulty(next) {
 
 function start(message) {
   todayKey = Logic.dateKeyKST();
+  playDate = todayKey; // 처음 열거나 날짜가 바뀌면 항상 오늘 퍼즐부터
   store = Logic.parseStore(storageGet(STORE_KEY), todayKey);
   difficulty = store.difficulty;
-  dateEl.textContent = todayKey;
   loadPuzzle(message);
   scheduleMidnightCheck();
 }
@@ -421,8 +455,10 @@ async function shareResult() {
     ? `🌟 퍼펙트! ${moves}번 만에 성공`
     : `✨ ${moves}번 만에 성공 (최소 ${puzzle.minMoves}번)`;
   const { current } = Logic.streaks(store, todayKey);
-  const extra = (hints ? `\n💡 힌트 ${hints}회` : '') + (current > 1 ? `\n🔥 ${current}일 연속 성공` : '');
-  const outcome = await shareText(`Daily Lights ${todayKey} · ${label} ${size}×${size}\n${line}${extra}`);
+  const streakLine = !isArchive() && current > 1 ? `\n🔥 ${current}일 연속 성공` : '';
+  const extra = (hints ? `\n💡 힌트 ${hints}회` : '') + streakLine;
+  const title = `Daily Lights ${playDate}${isArchive() ? ' (지난 퍼즐)' : ''} · ${label} ${size}×${size}`;
+  const outcome = await shareText(`${title}\n${line}${extra}`);
   if (outcome === 'copied') paint('결과를 복사했어요! 친구에게 붙여넣어 보세요.');
   else if (outcome === 'failed') paint('공유하지 못했어요. 다시 시도해 주세요.');
 }
@@ -462,8 +498,10 @@ paintSoundButton();
 window.DailyLightsRecords.init({
   getStore: () => store,
   getToday: () => todayKey,
+  getPlayDate: () => playDate,
   share: shareText,
   onImport: importRecords,
+  openDate,
 });
 start();
 if (!storageWorks()) {
@@ -473,6 +511,7 @@ if (!storageWorks()) {
 
 boardEl.addEventListener('keydown', handleBoardKeys);
 resetEl.addEventListener('click', resetPuzzle);
+backToTodayEl.addEventListener('click', () => openDate(todayKey));
 hintEl.addEventListener('click', showHint);
 shareEl.addEventListener('click', shareResult);
 difficultyInputs.forEach(input => input.addEventListener('change', () => changeDifficulty(input.value)));
