@@ -25,6 +25,8 @@ jobs:
         with:
           node-version: 24
       - run: npm test
+      # 실제 브라우저(Chrome)로 화면까지 점검합니다. 통과해야 배포됩니다.
+      - run: npm run test:browser
 
   deploy:
     needs: test # 테스트가 실패하면 배포하지 않습니다.

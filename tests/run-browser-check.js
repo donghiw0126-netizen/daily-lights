@@ -85,10 +85,15 @@ async function main() {
   const url = `http://127.0.0.1:${server.address().port}/tests/browser-check.html`;
   const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'daily-lights-check-'));
   const port = 9300 + Math.floor(Math.random() * 600);
-  const proc = spawn(browser, [
+  const args = [
     '--headless=new', '--disable-gpu', '--no-first-run', '--no-default-browser-check',
-    `--remote-debugging-port=${port}`, `--user-data-dir=${profile}`, url,
-  ], { stdio: 'ignore' });
+    `--remote-debugging-port=${port}`, `--user-data-dir=${profile}`,
+  ];
+  // GitHub Actions 같은 CI 서버(Linux)에서는 Chrome 보안 격리(sandbox)가 막혀 실행이 안 될 수 있어 끕니다.
+  // 열어 보는 페이지가 우리 게임 파일뿐이라 안전합니다. (내 PC에서는 그대로 켜 둠)
+  if (process.env.CI) args.push('--no-sandbox');
+  console.log(`브라우저: ${path.basename(browser)}`);
+  const proc = spawn(browser, [...args, url], { stdio: 'ignore' });
 
   let exitCode = 1;
   try {
