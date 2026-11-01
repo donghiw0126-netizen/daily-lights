@@ -16,9 +16,10 @@ function solvedBy(board, size, presses) {
 }
 const TEN_YEARS = dates(3653);
 
-test('난이도 설정: 초급 3×3, 중급 4×4, 고급 5×5', () => {
-  assert.deepEqual(L.DIFFICULTY_IDS.map(id => L.DIFFICULTIES[id].size), [3, 4, 5]);
+test('난이도 설정: 초급 3×3, 중급 4×4, 고급 5×5, 퀘스트 6×6', () => {
+  assert.deepEqual(L.DIFFICULTY_IDS.map(id => L.DIFFICULTIES[id].size), [3, 4, 5, 6]);
   assert.ok(L.isDifficulty('hard'));
+  assert.ok(L.isDifficulty('quest') && L.DIFFICULTIES.quest.quest === true);
   assert.ok(!L.isDifficulty('toString'), '객체 기본 속성은 난이도가 아님');
 });
 
@@ -267,6 +268,7 @@ test('오늘의 기록 공유 문구', () => {
     '초급 3×3  🟩🟩🟩🟩 🌟 퍼펙트',
     '중급 4×4  🟩🟩🟩🟩🟩🟨🟨 7번 💡2',
     '고급 5×5  ⬜ 아직',
+    '퀘스트 6×6  ⬜ 아직',
     '🔥 2일 연속 성공',
   ].join('\n'));
 });
@@ -400,4 +402,34 @@ test('지난 퍼즐 진행 상황 저장·복원과 검증', () => {
   }
   const weird = L.parseStore(JSON.stringify({ version: 2, history: { easy: { [date]: { moves: 4, hints: 0, minMoves: 4, late: 'yes' } } } }), today);
   assert.deepEqual(weird.history.easy, {}, 'late 가 true/false 가 아니면 거부');
+});
+
+// ── 일일 퀘스트 ─────────────────────────────────────────────
+
+test('퀘스트: 10년치 모두 6×6, 최소 20~24번, 제한 = 최소 + 여유 횟수, 정답은 하나뿐', () => {
+  for (const date of TEN_YEARS) {
+    const p = L.generatePuzzle(date, 'quest');
+    assert.equal(p.size, 6);
+    assert.ok(p.minMoves >= 20 && p.minMoves <= 24, `${date}: 최소 ${p.minMoves}번`);
+    assert.equal(p.moveLimit, p.minMoves + L.DIFFICULTIES.quest.extraMoves);
+    assert.ok(solvedBy(p.board, 6, L.solve(p.board, 6)));
+  }
+  // 6×6 은 어떤 배치든 해답이 정확히 하나 → 돌아가는 다른 길이 없음
+  const rng = L.seededRandom(7);
+  for (let t = 0; t < 200; t++) {
+    const board = Array.from({ length: 36 }, () => rng() < 0.5);
+    assert.ok(L.solve(board, 6), '6×6 은 항상 풀 수 있음');
+  }
+  assert.equal(L.generatePuzzle('2026-11-01', 'hard').moveLimit, undefined, '일반 난이도에는 제한 없음');
+});
+
+test('퀘스트 공유 문구', () => {
+  const date = '2026-11-01';
+  const p = L.generatePuzzle(date, 'quest');
+  const text = L.resultShareText({ date, difficulty: 'quest', board: p.board, result: { moves: p.minMoves + 3, hints: 0, minMoves: p.minMoves }, streak: 2 });
+  const lines = text.split('\n');
+  assert.equal(lines[0], 'Daily Lights 2026-11-01 · 🏆 퀘스트 6×6');
+  assert.equal(lines.length, 1 + 6 + 1 + 1, '제목 + 6줄 보드 + 결과 + 연속');
+  assert.ok(lines[7].endsWith(`🏆 퀘스트 클리어! ${p.minMoves + 3}번 (최소 ${p.minMoves})`), lines[7]);
+  assert.ok(lines[7].includes('+'), '긴 막대는 +N 으로 줄임');
 });

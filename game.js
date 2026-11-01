@@ -26,6 +26,10 @@ const footnoteEl = document.querySelector('#footnote');
 const confettiEl = document.querySelector('#confetti');
 const dateLabelEl = document.querySelector('#dateLabel');
 const archiveBarEl = document.querySelector('#archiveBar');
+const questBarEl = document.querySelector('#questBar');
+const questRuleEl = document.querySelector('#questRule');
+const hintIconEl = document.querySelector('#hintIcon');
+const hintLabelEl = document.querySelector('#hintLabel');
 const backToTodayEl = document.querySelector('#backToToday');
 const difficultyInputs = document.querySelectorAll('input[name="difficulty"]');
 
@@ -141,6 +145,7 @@ const sound = {
   win() { [523, 659, 784, 1047].forEach((f, i) => this.tone(f, i * 0.11, 0.35, 0.07)); },
   hint() { this.tone(880, 0, 0.1, 0.05); this.tone(1175, 0.08, 0.16, 0.05); },
   reset() { this.tone(330, 0, 0.12, 0.05, 'triangle'); },
+  fail() { [392, 330, 262].forEach((f, i) => this.tone(f, i * 0.14, 0.3, 0.06, 'triangle')); },
 };
 
 // ── 그리기 ──────────────────────────────────────────────
@@ -150,16 +155,36 @@ function tileLabel(i, on) {
   return `${Math.floor(i / size) + 1}행 ${(i % size) + 1}열, ${on ? '켜짐' : '꺼짐'}${hinted}`;
 }
 
+// ── 일일 퀘스트 ─────────────────────────────────────────
+// 퀘스트는 힌트 금지, puzzle.moveLimit 번 안에 풀어야 클리어. 다 쓰면 실패(다시 시작으로 재도전).
+
+function isQuest() {
+  return Logic.DIFFICULTIES[difficulty].quest === true;
+}
+function isFailed() {
+  return !solved && puzzle.moveLimit !== undefined && moves >= puzzle.moveLimit;
+}
+
 function winMessage() {
   const result = { moves, hints, minMoves: puzzle.minMoves };
+  if (isQuest()) {
+    return Logic.isPerfect(result)
+      ? `🏆🌟 퍼펙트 클리어! 최소 횟수 ${moves}번으로 퀘스트를 깼어요.`
+      : `🏆 퀘스트 클리어! ${moves}번 만에 성공했어요. (최소 ${puzzle.minMoves}번 · 제한 ${puzzle.moveLimit}번)`;
+  }
   if (Logic.isPerfect(result)) return `🌟 퍼펙트! 최소 횟수 ${moves}번 만에 성공했어요.`;
   const hintText = hints ? `, 힌트 ${hints}회` : '';
   return `✨ 성공! ${moves}번 만에 모든 불을 껐어요. (최소 ${puzzle.minMoves}번${hintText})`;
 }
 
+function failMessage() {
+  return `😢 실패! 제한 ${puzzle.moveLimit}번을 모두 썼어요. "다시 시작"으로 재도전해 보세요.`;
+}
+
 // 기본 안내: 남은 불 개수도 알려 줘서 화면 읽기 프로그램 사용자도 진행 상황을 알 수 있게 합니다.
 function playingMessage() {
   const lit = board.filter(Boolean).length;
+  if (isQuest()) return `남은 불 ${lit}개 · 남은 기회 ${puzzle.moveLimit - moves}번`;
   return `남은 불 ${lit}개 · 빛나는 타일을 모두 꺼 주세요.`;
 }
 
@@ -170,17 +195,21 @@ function paint(message) {
     tile.classList.toggle('on', on);
     tile.classList.toggle('hinted', i === hintIndex);
     tile.setAttribute('aria-label', tileLabel(i, on));
-    tile.disabled = solved;
+    tile.disabled = solved || isFailed();
     tile.tabIndex = i === focusIndex ? 0 : -1; // Tab 키로는 보드에 한 번만 들어오고, 안에서는 방향키로 이동
   });
   movesEl.textContent = String(moves);
-  parEl.textContent = `최소 ${puzzle.minMoves}번`;
+  parEl.textContent = isQuest() ? `최소 ${puzzle.minMoves} · 제한 ${puzzle.moveLimit}` : `최소 ${puzzle.minMoves}번`;
   resetEl.disabled = moves === 0 && hints === 0;
   hintEl.hidden = solved;
+  hintEl.disabled = isQuest(); // 퀘스트는 힌트 금지
+  hintIconEl.textContent = isQuest() ? '🚫' : '💡';
+  hintLabelEl.textContent = isQuest() ? '힌트 금지' : '힌트';
   hintCountEl.textContent = hints ? ` (${hints})` : '';
   shareEl.hidden = !solved;
   feedbackEl.classList.toggle('win', solved);
-  feedbackEl.textContent = message || (solved ? winMessage() : playingMessage());
+  feedbackEl.classList.toggle('fail', isFailed());
+  feedbackEl.textContent = message || (solved ? winMessage() : isFailed() ? failMessage() : playingMessage());
   paintRecords();
 }
 
@@ -247,7 +276,7 @@ function refreshIfNewDay() {
 }
 
 function handlePress(index) {
-  if (refreshIfNewDay() || solved) return;
+  if (refreshIfNewDay() || solved || isFailed()) return;
 
   Logic.press(board, index, size);
   moves++;
@@ -273,12 +302,15 @@ function handlePress(index) {
 
   for (const i of Logic.affected(index, size)) replayAnimation(boardEl.children[i], i === index ? 'pressed' : 'flip');
   if (solved) celebrate();
-  else sound.tap(board[index]);
+  else if (isFailed()) { // 퀘스트 제한 횟수를 다 씀
+    sound.fail();
+    resetEl.focus(); // 타일이 잠기므로 "다시 시작"으로 포커스 이동
+  } else sound.tap(board[index]);
 }
 
 // 힌트: 최소 해답에 포함된 칸 하나를 반짝이게 합니다. (logic.js 의 hint 참고)
 function showHint() {
-  if (refreshIfNewDay() || solved) return;
+  if (refreshIfNewDay() || solved || isQuest()) return; // 퀘스트는 힌트 금지
   const index = Logic.hint(board, size);
   if (index === null) return;
   if (index !== hintIndex) hints++; // 같은 힌트를 다시 눌러도 횟수는 한 번만
@@ -332,6 +364,8 @@ function loadPuzzle(message) {
   dateEl.textContent = playDate;
   dateLabelEl.textContent = isArchive() ? '지난 퍼즐' : '오늘의 퍼즐';
   archiveBarEl.hidden = !isArchive();
+  questBarEl.hidden = !isQuest();
+  if (isQuest()) questRuleEl.textContent = `힌트 없이 ${puzzle.moveLimit}번 안에 모든 불 끄기`;
   buildBoard();
   paint(message);
 }

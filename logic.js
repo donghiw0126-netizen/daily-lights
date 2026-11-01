@@ -12,10 +12,12 @@
   const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
   // 난이도: 보드 크기와 "최소 해답 길이"의 목표 범위
+  // quest: 일일 퀘스트 — 힌트 금지, "최소 + extraMoves"번 안에 풀어야 클리어
   const DIFFICULTIES = {
     easy:   { size: 3, label: '초급', minMoves: [4, 6] },
     normal: { size: 4, label: '중급', minMoves: [5, 7] },
     hard:   { size: 5, label: '고급', minMoves: [9, 12] },
+    quest:  { size: 6, label: '퀘스트', minMoves: [20, 24], quest: true, extraMoves: 8 },
   };
   const DIFFICULTY_IDS = Object.keys(DIFFICULTIES);
   const DEFAULT_DIFFICULTY = 'easy';
@@ -159,10 +161,14 @@
   // ── 퍼즐 생성 ───────────────────────────────────────────
   // 꺼진 보드에 서로 다른 칸을 실제로 눌러 만들기 때문에 항상 풀 수 있습니다.
   // 최소 해답이 난이도 목표 범위에 들어올 때까지 다시 만들어 난이도를 고르게 맞춥니다.
+  // 반환값: { board, size, minMoves } + 퀘스트면 moveLimit(이 횟수 안에 풀어야 함)
   function generatePuzzle(date, difficulty) {
-    const { size, minMoves: [low, high] } = DIFFICULTIES[difficulty];
+    const { size, minMoves: [low, high], extraMoves } = DIFFICULTIES[difficulty];
     const n = size * size;
     const rng = seededRandom(seedFromString(`daily-lights:v2:${difficulty}:${date}`));
+    const finish = (board, minMoves) => (extraMoves
+      ? { board, size, minMoves, moveLimit: minMoves + extraMoves }
+      : { board, size, minMoves });
     let fallback = null;
     for (let attempt = 0; attempt < 500; attempt++) {
       const count = low + Math.floor(rng() * (high - low + 1));
@@ -174,8 +180,8 @@
         press(board, cells[k], size);
       }
       const minMoves = solve(board, size).length;
-      if (minMoves >= low && minMoves <= high) return { board, size, minMoves };
-      if (minMoves > 0 && !fallback) fallback = { board, size, minMoves };
+      if (minMoves >= low && minMoves <= high) return finish(board, minMoves);
+      if (minMoves > 0 && !fallback) fallback = finish(board, minMoves);
     }
     return fallback; // 테스트상 10년치 모두 위에서 끝나지만, 만일을 대비한 안전장치
   }
@@ -355,12 +361,13 @@
   // 한 판 결과 공유
   // options: { date, difficulty, board(시작 보드), result: { moves, hints, minMoves }, streak, archive }
   function resultShareText({ date, difficulty, board, result, streak = 0, archive = false }) {
-    const { label, size } = DIFFICULTIES[difficulty];
-    const summary = isPerfect(result)
+    const { label, size, quest } = DIFFICULTIES[difficulty];
+    let summary = isPerfect(result)
       ? `🌟 퍼펙트! ${result.moves}번`
       : `${result.moves}번 (최소 ${result.minMoves})`;
+    if (quest) summary = `🏆 퀘스트 클리어! ${summary}`;
     const lines = [
-      `Daily Lights ${date}${archive ? ' (지난 퍼즐)' : ''} · ${label} ${size}×${size}`,
+      `Daily Lights ${date}${archive ? ' (지난 퍼즐)' : ''} · ${quest ? '🏆 ' : ''}${label} ${size}×${size}`,
       boardEmoji(board, size),
       `${movesBar(result)} ${summary}`,
     ];
@@ -369,7 +376,7 @@
     return lines.join('\n');
   }
 
-  // 난이도 3개의 오늘 결과를 한 번에 공유하는 문구
+  // 모든 난이도(퀘스트 포함)의 오늘 결과를 한 번에 공유하는 문구
   function dailyShareText(store, today) {
     const lines = [`Daily Lights ${today}`];
     for (const id of DIFFICULTY_IDS) {

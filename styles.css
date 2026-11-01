@@ -83,7 +83,7 @@ button:focus-visible { outline: 3px solid #fff; outline-offset: 2px; }
 /* 난이도 선택 (라디오 버튼을 탭처럼 꾸밈 → 방향키로도 바꿀 수 있음) */
 .difficulty {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 4px;
   margin: 0 0 22px;
   padding: 4px;
@@ -211,6 +211,7 @@ button:focus-visible { outline: 3px solid #fff; outline-offset: 2px; }
   word-break: keep-all;
 }
 .feedback.win { color: var(--mint); font-weight: 800; font-size: 15px; animation: pop .45s ease-out; }
+.feedback.fail { color: #ff9c9c; font-weight: 700; }
 @keyframes pop {
   0% { transform: scale(.85); opacity: 0; }
   100% { transform: scale(1); opacity: 1; }
@@ -368,6 +369,7 @@ footer p { margin: 0; }
 .dot.easy { background: var(--mint); }
 .dot.normal { background: #5fd3ff; }
 .dot.hard { background: #ffd27a; }
+.dot.quest { background: #c49bff; }
 
 .calendar-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
 .calendar-head h3 { margin: 0; font-size: 15px; }
@@ -407,10 +409,30 @@ footer p { margin: 0; }
 .dot.late { background: transparent; box-shadow: inset 0 0 0 1.5px var(--mint); }
 .dot.normal.late { box-shadow: inset 0 0 0 1.5px #5fd3ff; }
 .dot.hard.late { box-shadow: inset 0 0 0 1.5px #ffd27a; }
+.dot.quest.late { box-shadow: inset 0 0 0 1.5px #c49bff; }
 .legend { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 4px 10px; margin: 10px 0 6px; font-size: 11px; color: var(--muted); }
 .legend .dot { margin-right: -6px; }
 .legend .star { color: #ffd27a; margin-right: -6px; font-size: 11px; }
 .calendar-tip { margin: 0 0 16px; font-size: 11px; color: var(--faint); text-align: center; word-break: keep-all; }
+
+/* 퀘스트 탭과 안내줄 (보라색) */
+.difficulty .quest-tab input:checked + span { background: #3a2d5c; color: #e6d9ff; }
+.quest-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: -6px 0 18px;
+  padding: 10px 12px;
+  border: 1px solid #5b4890;
+  border-radius: 12px;
+  background: #241d3a;
+  color: #e6d9ff;
+  font-size: 12px;
+  line-height: 1.5;
+  word-break: keep-all;
+}
+.quest-bar strong { color: #fff; }
+.quest-badge { font-size: 20px; }
 
 /* 지난 퍼즐 안내줄 */
 .archive-bar {

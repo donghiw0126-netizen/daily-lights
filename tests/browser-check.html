@@ -185,7 +185,7 @@ async function recordsChecks() {
   $(frame, '#prevMonth').click();
   check(text('#calendarTitle') !== before, '이전 달로 이동', text('#calendarTitle'));
   check(!$(frame, '#shareToday').disabled, '오늘 성공 → 오늘의 기록 공유 가능');
-  check(frame.contentDocument.querySelectorAll('#difficultyRows tr').length === 3, '난이도별 기록 표 3줄');
+  check(frame.contentDocument.querySelectorAll('#difficultyRows tr').length === 4, '난이도별 기록 표 4줄 (퀘스트 포함)');
 
   // 백업 불러오기 (합치기)
   const incoming = Logic.createStore();
@@ -307,6 +307,47 @@ async function archiveChecks() {
   check(text('#dateTitle') === today && $(frame, '#archiveBar').hidden && text('#dateLabel') === '오늘의 퍼즐', '"오늘 퍼즐로" 버튼으로 돌아오기');
 }
 
+// 일일 퀘스트: 6×6, 힌트 금지, 제한 횟수 넘기면 실패 → 다시 시작 → 클리어
+async function questChecks() {
+  localStorage.setItem(KEY, JSON.stringify({ version: 2, difficulty: 'quest', progress: {}, history: {} }));
+  const frame = await loadGame(320, 900);
+  const Logic = frame.contentWindow.DailyLightsLogic;
+  const today = Logic.dateKeyKST();
+  const puzzle = Logic.generatePuzzle(today, 'quest');
+  const text = sel => $(frame, sel).textContent;
+
+  check(tiles(frame).length === 36 && !$(frame, '#questBar').hidden, '퀘스트: 6×6 보드 + 퀘스트 안내줄');
+  check(text('#questRule').includes(`${puzzle.moveLimit}번 안에`), '안내줄에 제한 횟수', text('#questRule'));
+  check($(frame, '#hint').disabled && text('#hintLabel') === '힌트 금지', '퀘스트: 힌트 버튼 잠김');
+  check(text('#par') === `최소 ${puzzle.minMoves} · 제한 ${puzzle.moveLimit}`, '최소·제한 횟수 표시', text('#par'));
+  check(text('#feedback').includes(`남은 기회 ${puzzle.moveLimit}번`), '남은 기회 안내', text('#feedback'));
+
+  // 일부러 실패: 같은 칸을 제한 횟수만큼 (짝수 번 누르면 원래대로라 풀리지 않음)
+  for (let i = 0; i < puzzle.moveLimit; i++) tiles(frame)[0].click();
+  check(state(frame).moves === puzzle.moveLimit && $(frame, '#feedback').classList.contains('fail') && text('#feedback').includes('실패'),
+    '제한 횟수를 다 쓰면 실패', text('#feedback'));
+  check(tiles(frame).every(t => t.disabled), '실패하면 보드 잠김');
+  tiles(frame)[5].click();
+  check(state(frame).moves === puzzle.moveLimit, '실패 후에는 눌러도 횟수가 늘지 않음');
+  const saved = JSON.parse(localStorage.getItem(KEY));
+  check(!saved.history.quest || !saved.history.quest[today], '실패는 기록에 남지 않음');
+
+  await reload(frame);
+  check(text('#feedback').includes('실패') && tiles(frame).every(t => t.disabled), '새로고침해도 실패 상태 유지');
+
+  $(frame, '#reset').click();
+  check(state(frame).moves === 0 && !tiles(frame)[0].disabled, '"다시 시작"으로 재도전');
+  for (const i of Logic.solve(state(frame).board, 6)) tiles(frame)[i].click();
+  check(text('#feedback').includes('퀘스트를 깼어요') || text('#feedback').includes('퀘스트 클리어'), '퀘스트 클리어 메시지', text('#feedback'));
+  const after = JSON.parse(localStorage.getItem(KEY));
+  check(after.history.quest && after.history.quest[today] && after.history.quest[today].hints === 0, '클리어 기록 저장 (힌트 0)');
+  check(!$(frame, 'input[value="quest"] + span .done').hidden, '퀘스트 탭에 오늘 클리어 ✓');
+  check(!$(frame, '#share').hidden, '클리어 후 공유 버튼');
+
+  choose(frame, 'easy');
+  check($(frame, '#questBar').hidden && !$(frame, '#hint').disabled && text('#hintLabel') === '힌트', '다른 난이도로 바꾸면 힌트 다시 사용 가능');
+}
+
 // 처음 안내 (tutorial.js)
 async function tutorialChecks() {
   const SEEN = 'daily-lights-tutorial-seen';
@@ -421,7 +462,7 @@ async function layoutChecks(width, difficulty, height = 1000) {
   const tag = `${width}×${height} ${difficulty}`;
   check(root.scrollWidth <= root.clientWidth, `${tag}: 가로 스크롤 없음`, `${root.scrollWidth} vs ${root.clientWidth}`);
 
-  const items = [...doc.querySelectorAll('#sound, #openRecords, .brand, .difficulty span, #reset, #hint, #share, .tile, .move-counter, #dateTitle, #stats')]
+  const items = [...doc.querySelectorAll('#sound, #openRecords, .brand, .difficulty label > span, #reset, #hint, #share, .tile, .move-counter, #dateTitle, #stats')]
     .filter(el => el.getClientRects().length) // 숨겨진 요소 제외
     .map(el => ({ el, r: el.getBoundingClientRect() }));
   const clashes = [];
@@ -433,7 +474,7 @@ async function layoutChecks(width, difficulty, height = 1000) {
   check(clashes.length === 0, `${tag}: 버튼·타일 겹침 없음`, clashes.slice(0, 3).join(', '));
   const outside = items.filter(({ r }) => r.left < 0 || r.right > root.clientWidth + 0.5);
   check(outside.length === 0, `${tag}: 화면 밖으로 나간 요소 없음`);
-  const small = [...doc.querySelectorAll('#reset, #hint, .tile, #sound, .difficulty span')]
+  const small = [...doc.querySelectorAll('#reset, #hint, .tile, #sound, .difficulty label > span')]
     .filter(el => el.getClientRects().length && el.getBoundingClientRect().height < 36);
   check(small.length === 0, `${tag}: 터치 대상 높이 36px 이상`, small.map(el => el.id || el.className).join(', '));
 
@@ -463,7 +504,8 @@ async function layoutChecks(width, difficulty, height = 1000) {
     await archiveChecks();
     await pwaDevChecks();
     await tutorialChecks(); // 끝나면 "봤음" 상태로 남아 아래 레이아웃 검사를 가리지 않음
-    for (const w of [320, 360, 390, 768, 1280]) for (const d of ['easy', 'hard']) await layoutChecks(w, d);
+    await questChecks();
+    for (const w of [320, 360, 390, 768, 1280]) for (const d of ['easy', 'hard', 'quest']) await layoutChecks(w, d);
     await layoutChecks(740, 'hard', 360); // 휴대폰 가로 모드
   } catch (e) {
     check(false, '점검 중 예외 발생', e.message);

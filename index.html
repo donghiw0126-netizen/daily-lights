@@ -59,11 +59,17 @@
         <label><input type="radio" name="difficulty" value="easy" /><span>초급 <small>3×3</small><em class="done" hidden>✓<span class="sr-only"> 오늘 완료</span></em></span></label>
         <label><input type="radio" name="difficulty" value="normal" /><span>중급 <small>4×4</small><em class="done" hidden>✓<span class="sr-only"> 오늘 완료</span></em></span></label>
         <label><input type="radio" name="difficulty" value="hard" /><span>고급 <small>5×5</small><em class="done" hidden>✓<span class="sr-only"> 오늘 완료</span></em></span></label>
+        <label class="quest-tab"><input type="radio" name="difficulty" value="quest" /><span><span aria-hidden="true">🏆</span>퀘스트 <small>6×6</small><em class="done" hidden>✓<span class="sr-only"> 오늘 클리어</span></em></span></label>
       </fieldset>
 
       <div id="archiveBar" class="archive-bar" hidden>
         <span><span aria-hidden="true">📅</span> 지난 퍼즐을 풀고 있어요 · 연속 기록에는 포함되지 않아요</span>
         <button id="backToToday" class="archive-back" type="button">오늘 퍼즐로 <span aria-hidden="true">↩</span></button>
+      </div>
+
+      <div id="questBar" class="quest-bar" hidden>
+        <span class="quest-badge" aria-hidden="true">🏆</span>
+        <span><strong>오늘의 퀘스트</strong> · <span id="questRule">힌트 없이 정해진 횟수 안에 모든 불 끄기</span></span>
       </div>
 
       <div class="game-header">
@@ -77,7 +83,7 @@
       <noscript><p class="noscript">이 게임은 JavaScript가 필요해요. 브라우저 설정에서 JavaScript를 켜 주세요.</p></noscript>
       <div class="actions">
         <button id="reset" class="secondary" type="button"><span aria-hidden="true">↻</span> 다시 시작</button>
-        <button id="hint" class="hint" type="button"><span aria-hidden="true">💡</span> 힌트<span id="hintCount"></span></button>
+        <button id="hint" class="hint" type="button"><span id="hintIcon" aria-hidden="true">💡</span> <span id="hintLabel">힌트</span><span id="hintCount"></span></button>
         <button id="share" class="primary" type="button" hidden>결과 공유하기 <span aria-hidden="true">↗</span></button>
       </div>
       <p id="stats" class="stats"></p>
@@ -150,7 +156,7 @@
       </div>
       <div class="weekdays" aria-hidden="true"><span>일</span><span>월</span><span>화</span><span>수</span><span>목</span><span>금</span><span>토</span></div>
       <ol id="calendarDays" class="calendar-days"></ol>
-      <p class="legend" aria-hidden="true"><i class="dot easy"></i>초급 <i class="dot normal"></i>중급 <i class="dot hard"></i>고급 <b class="star">★</b>퍼펙트 포함 <i class="dot easy late"></i>나중에 풂</p>
+      <p class="legend" aria-hidden="true"><i class="dot easy"></i>초급 <i class="dot normal"></i>중급 <i class="dot hard"></i>고급 <i class="dot quest"></i>퀘스트 <b class="star">★</b>퍼펙트 포함 <i class="dot easy late"></i>나중에 풂</p>
       <p class="calendar-tip">날짜를 누르면 그날 퍼즐을 풀 수 있어요. (2026년 10월 1일부터)</p>
     </section>
 
