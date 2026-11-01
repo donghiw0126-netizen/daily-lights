@@ -119,6 +119,7 @@
         </div>
       </div>
       <p class="keyboard-tip"><span aria-hidden="true">⌨️</span> 키보드: 방향키로 이동 · Enter/Space로 누르기</p>
+      <p class="tutorial-reopen"><button id="openTutorial" class="secondary" type="button"><span aria-hidden="true">▶</span> 처음 안내 다시 보기</button></p>
     </section>
 
     <footer>
@@ -170,11 +171,30 @@
     <p class="records-donate"><a class="donate-link" href="#" target="_blank" rel="noopener noreferrer" hidden></a></p>
   </dialog>
 
+  <!-- 처음 안내: 처음 방문한 사람에게 4단계로 차례차례 보여 줍니다 (tutorial.js) -->
+  <dialog id="tutorial" class="tutorial" aria-labelledby="tutorialTitle" aria-describedby="tutorialText">
+    <div class="tutorial-head">
+      <span id="tutorialCount" class="tutorial-count">1 / 4</span>
+      <span id="tutorialDots" class="tutorial-dots" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+      <button id="tutorialSkip" class="tutorial-skip" type="button">건너뛰기</button>
+    </div>
+    <div id="tutorialVisual" class="tutorial-visual"></div>
+    <div aria-live="polite">
+      <h2 id="tutorialTitle"></h2>
+      <p id="tutorialText"></p>
+    </div>
+    <div class="tutorial-actions">
+      <button id="tutorialPrev" class="secondary" type="button" hidden>이전</button>
+      <button id="tutorialNext" class="primary" type="button">다음</button>
+    </div>
+  </dialog>
+
   <canvas id="confetti" class="confetti" aria-hidden="true" hidden></canvas>
   <script src="./logic.js?v=__VERSION__" defer></script>
   <script src="./records.js?v=__VERSION__" defer></script>
   <script src="./game.js?v=__VERSION__" defer></script>
   <script src="./site-config.js?v=__VERSION__" defer></script>
   <script src="./site.js?v=__VERSION__" defer></script>
+  <script src="./tutorial.js?v=__VERSION__" defer></script>
 </body>
 </html>

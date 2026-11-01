@@ -464,6 +464,69 @@ footer p { margin: 0; }
 .records-help { margin: 6px 0 0; font-size: 11px; line-height: 1.6; color: var(--faint); text-align: center; word-break: keep-all; }
 .records-help strong { color: var(--muted); }
 
+/* ── 처음 안내 ────────────────────────────────── */
+.tutorial {
+  width: min(100% - 24px, 420px);
+  max-height: calc(100% - 24px);
+  padding: 20px;
+  border: 1px solid var(--card-border);
+  border-radius: 22px;
+  background: var(--card);
+  color: var(--text);
+  box-shadow: 0 30px 90px #000a;
+  text-align: center;
+}
+.tutorial::backdrop { background: #050a14d9; backdrop-filter: blur(3px); }
+.tutorial[open] { animation: pop .25s ease-out; }
+.tutorial-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.tutorial-count { font-size: 11px; color: var(--faint); min-width: 40px; text-align: left; font-variant-numeric: tabular-nums; }
+.tutorial-dots { display: flex; gap: 6px; }
+.tutorial-dots i { width: 7px; height: 7px; border-radius: 50%; background: #33425a; transition: background .2s, transform .2s; }
+.tutorial-dots i.active { background: var(--mint); transform: scale(1.3); }
+.tutorial-skip {
+  min-height: 36px;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+.tutorial-visual { min-height: 170px; display: flex; align-items: center; justify-content: center; margin: 14px 0 10px; }
+.tutorial h2 { margin: 0 0 8px; font-size: 19px; letter-spacing: -.03em; }
+.tutorial p { margin: 0; font-size: 13px; line-height: 1.7; color: var(--muted); word-break: keep-all; }
+.tutorial-actions { display: grid; grid-template-columns: 1fr 2fr; gap: 8px; margin-top: 20px; }
+.tutorial-actions button { min-height: 46px; border: 0; border-radius: 11px; font-weight: 750; font-size: 14px; cursor: pointer; }
+.tutorial-actions #tutorialPrev[hidden] + #tutorialNext { grid-column: 1 / -1; } /* 첫 단계는 "다음"이 가득 */
+
+/* 안내용 작은 보드 */
+.tutorial-compare { display: flex; align-items: center; gap: 14px; }
+.tutorial-compare figure { margin: 0; }
+.tutorial-compare figcaption { margin-top: 6px; font-size: 11px; color: var(--faint); }
+.tutorial-arrow { font-size: 22px; color: var(--mint); }
+.tutorial-board { display: grid; grid-template-columns: repeat(3, 34px); gap: 5px; }
+.tutorial-board i, .tutorial-board button {
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border-radius: 8px;
+  background: var(--tile-off);
+  border: 1px solid var(--tile-off-border);
+  transition: background .2s, box-shadow .2s, transform .12s;
+}
+.tutorial-board .on { background: var(--mint); border-color: var(--mint-light); box-shadow: 0 0 14px #69e7a366; }
+.tutorial-board.practice { grid-template-columns: repeat(3, 48px); gap: 7px; }
+.tutorial-board.practice button { width: 48px; height: 48px; border-radius: 11px; cursor: pointer; touch-action: manipulation; }
+.tutorial-board.practice button:active { transform: scale(.92); }
+.tutorial-practice { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.tutorial .tutorial-note { min-height: 40px; font-size: 12px; color: var(--mint); }
+.tutorial-tips { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; text-align: left; width: 100%; }
+.tutorial-tips li { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border-radius: 12px; background: #101a29; font-size: 13px; line-height: 1.55; word-break: keep-all; }
+.tip-icon { flex: none; font-size: 16px; line-height: 1.3; }
+.tutorial-reopen { text-align: center; margin: 10px 0 0; }
+.tutorial-reopen button { min-height: 40px; padding: 8px 16px; border: 0; border-radius: 10px; font-size: 13px; font-weight: 700; cursor: pointer; }
+
 /* 성공 시 색종이 (클릭을 막지 않도록 pointer-events 없음) */
 .confetti { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 10; }
 

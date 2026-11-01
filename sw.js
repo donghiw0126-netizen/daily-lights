@@ -13,6 +13,7 @@ const CORE_FILES = [
   `./game.js?v=${VERSION}`,
   `./site-config.js?v=${VERSION}`,
   `./site.js?v=${VERSION}`,
+  `./tutorial.js?v=${VERSION}`,
   './manifest.webmanifest',
   './icon.svg',
   './icon-192.png',
