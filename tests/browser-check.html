@@ -359,7 +359,7 @@ async function siteChecks() {
   check(win.DailyLightsSite.apply({ cloudflareAnalyticsToken: token }, 'localhost') === false && injected.length === 0, '내 PC(localhost)에서는 통계를 보내지 않음');
   check(win.DailyLightsSite.apply({ cloudflareAnalyticsToken: 'bad token!' }, 'example.github.io') === false, '이상한 토큰이면 통계 끔');
   const started = win.DailyLightsSite.apply({ cloudflareAnalyticsToken: token }, 'example.github.io');
-  check(started && injected.length === 1 && JSON.parse(injected[0].getAttribute('data-cf-beacon')).token === token,
+  check(started && injected.length === 1 && injected[0].type === 'module' && JSON.parse(injected[0].getAttribute('data-cf-beacon')).token === token,
     '배포 주소에서는 Cloudflare 통계 스크립트 연결');
   check(frame.contentDocument.querySelector('#privacyNote').textContent.includes('쿠키 없는'), '통계를 켜면 하단 안내 문구도 바뀜');
 }

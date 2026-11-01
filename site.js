@@ -38,6 +38,7 @@ window.DailyLightsSite = (function () {
     if (document.querySelector(`script[src="${ANALYTICS_SRC}"]`)) return true; // 이미 불러옴
 
     const script = document.createElement('script');
+    script.type = 'module'; // Cloudflare 안내: 직접 넣을 때는 module 로 (아주 오래된 브라우저에서는 실행 안 됨)
     script.defer = true;
     script.src = ANALYTICS_SRC;
     script.setAttribute('data-cf-beacon', JSON.stringify({ token }));

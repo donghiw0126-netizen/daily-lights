@@ -11,5 +11,5 @@ window.DailyLightsConfig = {
   // Cloudflare Web Analytics 토큰 (쿠키 없는 익명 방문 통계)
   //   Cloudflare 대시보드 → Analytics & Logs → Web Analytics → 사이트 추가 → 안내 코드의 "token" 값
   //   이 값은 원래 웹페이지에 공개되는 값이라 GitHub 에 올려도 괜찮습니다.
-  cloudflareAnalyticsToken: '',
+  cloudflareAnalyticsToken: '3068620acaf2450c8da236d89f346232',
 };

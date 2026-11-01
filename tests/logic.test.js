@@ -264,11 +264,36 @@ test('오늘의 기록 공유 문구', () => {
   const s = storeWith([['easy', today, 4], ['normal', today, 7, 2, 5], ['easy', '2026-10-31', 4]]);
   assert.equal(L.dailyShareText(s, today), [
     'Daily Lights 2026-11-01',
-    '초급 3×3  🌟 4번 퍼펙트',
-    '중급 4×4  ✅ 7번 (최소 5) 💡2',
+    '초급 3×3  🟩🟩🟩🟩 🌟 퍼펙트',
+    '중급 4×4  🟩🟩🟩🟩🟩🟨🟨 7번 💡2',
     '고급 5×5  ⬜ 아직',
     '🔥 2일 연속 성공',
   ].join('\n'));
+});
+
+test('공유 그림: 시작 보드와 결과 막대', () => {
+  const board = [true, false, false, false, true, false, false, true, true];
+  assert.equal(L.boardEmoji(board, 3), '🟩⬛⬛\n⬛🟩⬛\n⬛🟩🟩');
+  assert.equal(L.movesBar({ moves: 4, minMoves: 4 }), '🟩🟩🟩🟩');
+  assert.equal(L.movesBar({ moves: 6, minMoves: 4 }), '🟩🟩🟩🟩🟨🟨');
+  assert.equal(L.movesBar({ moves: 30, minMoves: 10 }), `${'🟩'.repeat(10)}${'🟨'.repeat(5)}+15`, '길면 줄임');
+});
+
+test('한 판 결과 공유 문구: 정답(누른 칸)은 들어가지 않는다', () => {
+  const date = '2026-11-01';
+  const { board, minMoves } = L.generatePuzzle(date, 'easy');
+  const text = L.resultShareText({ date, difficulty: 'easy', board, result: { moves: minMoves + 2, hints: 1, minMoves }, streak: 3 });
+  const lines = text.split('\n');
+  assert.equal(lines[0], 'Daily Lights 2026-11-01 · 초급 3×3');
+  assert.equal(lines.slice(1, 4).join('\n'), L.boardEmoji(board, 3), '시작 보드 그림');
+  assert.equal(lines[4], `${L.movesBar({ moves: minMoves + 2, minMoves })} ${minMoves + 2}번 (최소 ${minMoves})`);
+  assert.deepEqual(lines.slice(5), ['💡 힌트 1회', '🔥 3일 연속 성공']);
+
+  const perfect = L.resultShareText({ date, difficulty: 'easy', board, result: { moves: minMoves, hints: 0, minMoves }, streak: 1 });
+  assert.ok(perfect.endsWith(`🌟 퍼펙트! ${minMoves}번`), '퍼펙트, 연속 1일은 표시 안 함');
+
+  const archive = L.resultShareText({ date, difficulty: 'easy', board, result: { moves: minMoves, hints: 0, minMoves }, streak: 5, archive: true });
+  assert.ok(archive.startsWith('Daily Lights 2026-11-01 (지난 퍼즐)') && !archive.includes('🔥'), '지난 퍼즐은 연속 표시 안 함');
 });
 
 test('백업 → 복원: 내보낸 파일을 그대로 불러올 수 있다', () => {

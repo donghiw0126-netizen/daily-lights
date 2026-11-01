@@ -331,6 +331,44 @@
     return { days: clearedDates(store).size, perfect };
   }
 
+  // ── 공유 문구 (이모지 그림) ─────────────────────────────
+  // 정답(누른 칸)은 그리지 않습니다. 친구가 보고 따라 할 수 있기 때문입니다.
+
+  // 시작 보드 그림: 🟩 켜진 불, ⬛ 꺼진 불 (게임을 열면 누구나 보는 화면이라 노출될 것이 없음)
+  function boardEmoji(board, size) {
+    const rows = [];
+    for (let r = 0; r < size; r++) {
+      rows.push(board.slice(r * size, (r + 1) * size).map(on => (on ? '🟩' : '⬛')).join(''));
+    }
+    return rows.join('\n');
+  }
+
+  // 나의 결과 막대: 최소 횟수만큼 🟩, 더 누른 만큼 🟨. 너무 길면 뒤를 "+N" 으로 줄입니다.
+  function movesBar(result, max = 15) {
+    const green = Math.min(result.moves, result.minMoves);
+    const yellow = Math.max(result.moves - result.minMoves, 0);
+    const cells = '🟩'.repeat(green) + '🟨'.repeat(yellow);
+    const total = green + yellow;
+    return total > max ? `${[...cells].slice(0, max).join('')}+${total - max}` : cells;
+  }
+
+  // 한 판 결과 공유
+  // options: { date, difficulty, board(시작 보드), result: { moves, hints, minMoves }, streak, archive }
+  function resultShareText({ date, difficulty, board, result, streak = 0, archive = false }) {
+    const { label, size } = DIFFICULTIES[difficulty];
+    const summary = isPerfect(result)
+      ? `🌟 퍼펙트! ${result.moves}번`
+      : `${result.moves}번 (최소 ${result.minMoves})`;
+    const lines = [
+      `Daily Lights ${date}${archive ? ' (지난 퍼즐)' : ''} · ${label} ${size}×${size}`,
+      boardEmoji(board, size),
+      `${movesBar(result)} ${summary}`,
+    ];
+    if (result.hints) lines.push(`💡 힌트 ${result.hints}회`);
+    if (!archive && streak > 1) lines.push(`🔥 ${streak}일 연속 성공`);
+    return lines.join('\n');
+  }
+
   // 난이도 3개의 오늘 결과를 한 번에 공유하는 문구
   function dailyShareText(store, today) {
     const lines = [`Daily Lights ${today}`];
@@ -338,8 +376,8 @@
       const { label, size } = DIFFICULTIES[id];
       const r = store.history[id][today];
       let text = '⬜ 아직';
-      if (r && isPerfect(r)) text = `🌟 ${r.moves}번 퍼펙트`;
-      else if (r) text = `✅ ${r.moves}번 (최소 ${r.minMoves})${r.hints ? ` 💡${r.hints}` : ''}`;
+      if (r && isPerfect(r)) text = `${movesBar(r)} 🌟 퍼펙트`;
+      else if (r) text = `${movesBar(r)} ${r.moves}번${r.hints ? ` 💡${r.hints}` : ''}`;
       lines.push(`${label} ${size}×${size}  ${text}`);
     }
     const { current } = streaks(store, today);
@@ -385,7 +423,7 @@
     seedFromString, seededRandom,
     affected, press, isSolved, solve, hint, generatePuzzle,
     createStore, parseStore, serializeStore, isPerfect, isBetterResult, recordResult, statsFor,
-    clearedDates, streaks, totalStats, dailyShareText,
+    clearedDates, streaks, totalStats, boardEmoji, movesBar, resultShareText, dailyShareText,
     createBackup, parseBackup, mergeHistory,
   };
 });

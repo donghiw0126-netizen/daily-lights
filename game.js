@@ -449,16 +449,15 @@ function launchConfetti() {
 
 async function shareResult() {
   if (!solved) return;
-  const { label } = Logic.DIFFICULTIES[difficulty];
-  const result = { moves, hints, minMoves: puzzle.minMoves };
-  const line = Logic.isPerfect(result)
-    ? `🌟 퍼펙트! ${moves}번 만에 성공`
-    : `✨ ${moves}번 만에 성공 (최소 ${puzzle.minMoves}번)`;
-  const { current } = Logic.streaks(store, todayKey);
-  const streakLine = !isArchive() && current > 1 ? `\n🔥 ${current}일 연속 성공` : '';
-  const extra = (hints ? `\n💡 힌트 ${hints}회` : '') + streakLine;
-  const title = `Daily Lights ${playDate}${isArchive() ? ' (지난 퍼즐)' : ''} · ${label} ${size}×${size}`;
-  const outcome = await shareText(`${title}\n${line}${extra}`);
+  // 시작 보드 그림 + 나의 결과 막대 (문구 모양은 logic.js 의 resultShareText 참고)
+  const outcome = await shareText(Logic.resultShareText({
+    date: playDate,
+    difficulty,
+    board: puzzle.board,
+    result: { moves, hints, minMoves: puzzle.minMoves },
+    streak: Logic.streaks(store, todayKey).current,
+    archive: isArchive(),
+  }));
   if (outcome === 'copied') paint('결과를 복사했어요! 친구에게 붙여넣어 보세요.');
   else if (outcome === 'failed') paint('공유하지 못했어요. 다시 시도해 주세요.');
 }
