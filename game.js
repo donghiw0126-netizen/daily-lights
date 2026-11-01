@@ -30,6 +30,7 @@ const questBarEl = document.querySelector('#questBar');
 const questRuleEl = document.querySelector('#questRule');
 const hintIconEl = document.querySelector('#hintIcon');
 const hintLabelEl = document.querySelector('#hintLabel');
+const questMetaEl = document.querySelector('#questMeta');
 const backToTodayEl = document.querySelector('#backToToday');
 const difficultyInputs = document.querySelectorAll('input[name="difficulty"]');
 
@@ -48,6 +49,9 @@ let size = 0;
 let board = [];
 let moves = 0;
 let hints = 0;
+let attempts = 1;       // 퀘스트 도전 횟수 (다시 시작할 때마다 +1)
+let elapsedMs = 0;      // 퀘스트 풀이 시간
+let lastTickAt = null;  // 시간을 마지막으로 잰 시각 (null = 시계 멈춤)
 let solved = false;
 let hintIndex = null; // 지금 반짝이는 힌트 칸
 let focusIndex = 0;   // 방향키로 이동할 때 현재 칸
@@ -95,6 +99,7 @@ function isArchive() {
 // 진행 상황 저장: 오늘 퍼즐은 progress, 지난 퍼즐은 archive 에 (난이도마다 1개씩)
 function persist() {
   const state = { date: playDate, board, moves, hints };
+  if (isQuest()) Object.assign(state, { attempts, elapsedMs });
   if (isArchive()) store.archive[difficulty] = state;
   else store.progress[difficulty] = state;
   saveStore();
@@ -165,12 +170,45 @@ function isFailed() {
   return !solved && puzzle.moveLimit !== undefined && moves >= puzzle.moveLimit;
 }
 
+// ── 퀘스트 풀이 시간 ────────────────────────────────────
+// 보드가 화면에 보이는 동안만 셉니다. 다른 탭·앱에 가 있으면 멈추고,
+// 아무것도 안 누르고 IDLE_CAP 보다 오래 있으면 자리를 비운 것으로 보고 그만큼만 셉니다.
+const IDLE_CAP_MS = 5 * 60 * 1000;
+
+function timerShouldRun() {
+  return isQuest() && !solved && !isFailed() && !document.hidden;
+}
+// 지금까지 흐른 시간을 elapsedMs 에 더합니다.
+function tickTimer() {
+  if (lastTickAt === null) return;
+  const now = Date.now();
+  elapsedMs += Math.min(Math.max(now - lastTickAt, 0), IDLE_CAP_MS);
+  lastTickAt = now;
+}
+function resumeTimer() {
+  lastTickAt = timerShouldRun() ? Date.now() : null;
+}
+// 멈추면서 저장 (다른 난이도로 바꾸기, 탭 숨기기, 페이지 떠나기)
+function pauseTimer() {
+  if (lastTickAt === null) return;
+  tickTimer();
+  lastTickAt = null;
+  persist();
+}
+function currentElapsed() {
+  return lastTickAt === null ? elapsedMs : elapsedMs + Math.min(Date.now() - lastTickAt, IDLE_CAP_MS);
+}
+function paintQuestMeta() {
+  if (isQuest()) questMetaEl.textContent = `⏱ ${Logic.formatClock(currentElapsed())} · ${attempts}번째 도전`;
+}
+
 function winMessage() {
   const result = { moves, hints, minMoves: puzzle.minMoves };
   if (isQuest()) {
+    const detail = `⏱ ${Logic.formatDuration(elapsedMs)} · ${attempts}번째 도전`;
     return Logic.isPerfect(result)
-      ? `🏆🌟 퍼펙트 클리어! 최소 횟수 ${moves}번으로 퀘스트를 깼어요.`
-      : `🏆 퀘스트 클리어! ${moves}번 만에 성공했어요. (최소 ${puzzle.minMoves}번 · 제한 ${puzzle.moveLimit}번)`;
+      ? `🏆🌟 퀘스트 퍼펙트 클리어! 최소 횟수 ${moves}번 · ${detail}`
+      : `🏆 퀘스트 클리어! ${moves}번 · ${detail} (최소 ${puzzle.minMoves} · 제한 ${puzzle.moveLimit})`;
   }
   if (Logic.isPerfect(result)) return `🌟 퍼펙트! 최소 횟수 ${moves}번 만에 성공했어요.`;
   const hintText = hints ? `, 힌트 ${hints}회` : '';
@@ -178,7 +216,7 @@ function winMessage() {
 }
 
 function failMessage() {
-  return `😢 실패! 제한 ${puzzle.moveLimit}번을 모두 썼어요. "다시 시작"으로 재도전해 보세요.`;
+  return `😢 실패! 제한 ${puzzle.moveLimit}번을 모두 썼어요. "다시 시작"으로 ${attempts + 1}번째 도전!`;
 }
 
 // 기본 안내: 남은 불 개수도 알려 줘서 화면 읽기 프로그램 사용자도 진행 상황을 알 수 있게 합니다.
@@ -210,6 +248,7 @@ function paint(message) {
   feedbackEl.classList.toggle('win', solved);
   feedbackEl.classList.toggle('fail', isFailed());
   feedbackEl.textContent = message || (solved ? winMessage() : isFailed() ? failMessage() : playingMessage());
+  paintQuestMeta();
   paintRecords();
 }
 
@@ -224,7 +263,8 @@ function paintRecords() {
   const stats = Logic.statsFor(store, difficulty);
   const best = store.history[difficulty][playDate];
   const bestLabel = isArchive() ? '이 날 최고' : '오늘 최고';
-  const bestText = best ? ` · ${bestLabel} ${best.moves}번${best.hints ? `(힌트 ${best.hints})` : ''}` : '';
+  const timeText = best && best.timeMs !== undefined ? ` · ${Logic.formatDuration(best.timeMs)}` : '';
+  const bestText = best ? ` · ${bestLabel} ${best.moves}번${best.hints ? `(힌트 ${best.hints})` : ''}${timeText}` : '';
   statsEl.textContent = `${label} 기록 · 성공 ${stats.cleared}일 · 퍼펙트 ${stats.perfect}일${bestText}`;
 
   // 상단 기록 버튼의 🔥 연속 일수
@@ -278,23 +318,36 @@ function refreshIfNewDay() {
 function handlePress(index) {
   if (refreshIfNewDay() || solved || isFailed()) return;
 
+  tickTimer();
+  if (lastTickAt === null) resumeTimer(); // 탭을 다시 열고 처음 누른 경우 등
   Logic.press(board, index, size);
   moves++;
   hintIndex = null;
   solved = Logic.isSolved(board);
   focusIndex = index;
+  if (solved || isFailed()) lastTickAt = null; // 끝나면 시계 멈춤
   let message;
   if (solved) {
     const wasClearedToday = Logic.streaks(store, todayKey).todayCleared;
+    const wasQuestClearedToday = Boolean(store.history.quest[todayKey]);
     const result = { moves, hints, minMoves: puzzle.minMoves };
+    if (isQuest()) Object.assign(result, { attempts, timeMs: elapsedMs });
     if (isArchive()) result.late = true; // 지난 퍼즐 기록은 연속 성공에 넣지 않음
     const isNewBest = Logic.recordResult(store, difficulty, playDate, result);
     if (isArchive()) {
       message = `${winMessage()} ${isNewBest ? '지난 퍼즐 기록으로 저장했어요.' : '이 날의 기록은 그대로예요.'}`;
     } else if (!isNewBest) message = `${winMessage()} 오늘 최고 기록은 그대로예요.`;
-    else if (!wasClearedToday) { // 오늘 첫 성공이면 연속 기록을 축하
-      const { current } = Logic.streaks(store, todayKey);
-      if (current > 1) message = `${winMessage()} 🔥 ${current}일 연속 성공!`;
+    else {
+      const extras = [];
+      if (isQuest() && !wasQuestClearedToday) { // 오늘 첫 퀘스트 클리어면 퀘스트 연속 축하
+        const quest = Logic.questStats(store, todayKey);
+        if (quest.current > 1) extras.push(`🏆 퀘스트 ${quest.current}일 연속 클리어!`);
+      }
+      if (!wasClearedToday) { // 오늘 첫 성공이면 연속 기록을 축하
+        const { current } = Logic.streaks(store, todayKey);
+        if (current > 1) extras.push(`🔥 ${current}일 연속 성공!`);
+      }
+      if (extras.length) message = `${winMessage()} ${extras.join(' ')}`;
     }
   }
   persist();
@@ -334,11 +387,14 @@ function celebrate() {
 
 function resetPuzzle() {
   if (refreshIfNewDay()) return;
+  if (isQuest() && (moves > 0 || solved)) attempts++; // 퀘스트: 다시 시작 = 새 도전
   board = puzzle.board.slice();
   moves = 0;
   hints = 0;
   hintIndex = null;
   solved = false;
+  elapsedMs = 0;
+  resumeTimer();
   persist();
   // 성공 기록은 history 에 따로 남아 있으므로 다시 풀어도 지워지지 않습니다.
   paint('처음 상태로 되돌렸어요.');
@@ -358,8 +414,11 @@ function loadPuzzle(message) {
   board = saved ? saved.board.slice() : puzzle.board.slice();
   moves = saved ? saved.moves : 0;
   hints = saved ? saved.hints : 0;
+  attempts = saved && saved.attempts ? saved.attempts : 1;
+  elapsedMs = saved && saved.elapsedMs ? saved.elapsedMs : 0;
   solved = Logic.isSolved(board);
   hintIndex = null;
+  resumeTimer();
 
   dateEl.textContent = playDate;
   dateLabelEl.textContent = isArchive() ? '지난 퍼즐' : '오늘의 퍼즐';
@@ -373,6 +432,7 @@ function loadPuzzle(message) {
 // 달력에서 날짜를 골랐을 때 (records.js 에서 호출). 오늘이나 범위 밖 날짜면 오늘 퍼즐로.
 function openDate(date) {
   if (refreshIfNewDay()) return;
+  pauseTimer(); // 지금 퀘스트 시간을 저장하고 이동
   playDate = Logic.isArchiveDate(date, todayKey) ? date : todayKey;
   loadPuzzle(isArchive() ? `📅 ${playDate} 퍼즐을 열었어요.` : '오늘의 퍼즐로 돌아왔어요.');
   boardEl.children[focusIndex].focus({ preventScroll: true });
@@ -382,6 +442,7 @@ function openDate(date) {
 function changeDifficulty(next) {
   if (!Logic.isDifficulty(next) || next === difficulty) return;
   if (refreshIfNewDay()) return;
+  pauseTimer(); // 지금 퀘스트 시간을 저장하고 이동
   difficulty = next;
   saveStore();
   loadPuzzle();
@@ -490,6 +551,7 @@ async function shareResult() {
     board: puzzle.board,
     result: { moves, hints, minMoves: puzzle.minMoves },
     streak: Logic.streaks(store, todayKey).current,
+    questStreak: Logic.questStats(store, todayKey).current,
     archive: isArchive(),
   }));
   if (outcome === 'copied') paint('결과를 복사했어요! 친구에게 붙여넣어 보세요.');
@@ -554,7 +616,13 @@ soundEl.addEventListener('click', () => {
   sound.tap(true); // 소리를 켰을 때 바로 들리도록 확인음
 });
 window.addEventListener('focus', checkNewDay);
-document.addEventListener('visibilitychange', () => { if (!document.hidden) checkNewDay(); });
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) { pauseTimer(); return; } // 다른 탭·앱으로 가면 퀘스트 시계를 멈추고 저장
+  checkNewDay();
+  if (lastTickAt === null) resumeTimer();
+});
+window.addEventListener('pagehide', pauseTimer); // 페이지를 떠날 때도 시간 저장
+setInterval(paintQuestMeta, 1000); // 퀘스트 시계 표시 (1초마다)
 
 // 다른 탭에서 기록이 바뀌면 이 탭 화면도 최신으로 맞춥니다. (이 탭의 난이도 선택은 유지)
 window.addEventListener('storage', event => {

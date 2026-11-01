@@ -337,10 +337,18 @@ async function questChecks() {
 
   $(frame, '#reset').click();
   check(state(frame).moves === 0 && !tiles(frame)[0].disabled, '"다시 시작"으로 재도전');
+  check(text('#questMeta').includes('2번째 도전') && text('#questMeta').startsWith('⏱'), '다시 시작하면 2번째 도전 + 시계 표시', text('#questMeta'));
+  await wait(1200); // 시계가 실제로 흐르는지 보려고 잠시 기다린 뒤 풀기
   for (const i of Logic.solve(state(frame).board, 6)) tiles(frame)[i].click();
-  check(text('#feedback').includes('퀘스트를 깼어요') || text('#feedback').includes('퀘스트 클리어'), '퀘스트 클리어 메시지', text('#feedback'));
+  check(text('#feedback').startsWith('🏆') && text('#feedback').includes('클리어'), '퀘스트 클리어 메시지', text('#feedback'));
   const after = JSON.parse(localStorage.getItem(KEY));
   check(after.history.quest && after.history.quest[today] && after.history.quest[today].hints === 0, '클리어 기록 저장 (힌트 0)');
+  const record = after.history.quest[today] || {};
+  check(record.attempts === 2 && Number.isInteger(record.timeMs) && record.timeMs >= 1000, '클리어 기록에 도전 횟수(2)와 풀이 시간(1초 이상)', JSON.stringify(record));
+  check(text('#feedback').includes('2번째 도전') && text('#feedback').includes('⏱'), '클리어 메시지에 시간·도전 횟수', text('#feedback'));
+  $(frame, '#openRecords').click();
+  check(text('#questSummary').includes('퀘스트 클리어 1회') && text('#questSummary').includes('연속 1일'), '기록 창에 퀘스트 요약', text('#questSummary'));
+  $(frame, '#closeRecords').click();
   check(!$(frame, 'input[value="quest"] + span .done').hidden, '퀘스트 탭에 오늘 클리어 ✓');
   check(!$(frame, '#share').hidden, '클리어 후 공유 버튼');
 

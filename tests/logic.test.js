@@ -433,3 +433,64 @@ test('퀘스트 공유 문구', () => {
   assert.ok(lines[7].endsWith(`🏆 퀘스트 클리어! ${p.minMoves + 3}번 (최소 ${p.minMoves})`), lines[7]);
   assert.ok(lines[7].includes('+'), '긴 막대는 +N 으로 줄임');
 });
+
+// ── 퀘스트: 도전 횟수·풀이 시간·연속 클리어 ─────────────────────
+
+test('시간 표시', () => {
+  assert.equal(L.formatClock(0), '0:00');
+  assert.equal(L.formatClock(187999), '3:07', '초 단위는 버림');
+  assert.equal(L.formatClock(3723000), '1:02:03');
+  assert.equal(L.formatDuration(45000), '45초');
+  assert.equal(L.formatDuration(187000), '3분 7초');
+  assert.equal(L.formatDuration(3723000), '1시간 2분');
+});
+
+test('도전 횟수·풀이 시간: 저장·복원, 예전 데이터 호환, 잘못된 값 거부', () => {
+  const today = '2026-11-01';
+  const { board } = L.generatePuzzle(today, 'quest');
+  const s = L.createStore();
+  s.progress.quest = { date: today, board, moves: 3, hints: 0, attempts: 2, elapsedMs: 45000 };
+  s.history.quest['2026-10-31'] = { moves: 25, hints: 0, minMoves: 22, attempts: 3, timeMs: 312000 };
+  s.history.easy['2026-10-31'] = { moves: 4, hints: 0, minMoves: 4 }; // 예전 형식 (시간·도전 없음)
+  assert.deepEqual(L.parseStore(L.serializeStore(s), today), s);
+
+  for (const bad of [{ attempts: 0 }, { attempts: 1.5 }, { elapsedMs: -1 }, { elapsedMs: '10' }, { elapsedMs: 1e12 }]) {
+    const raw = JSON.stringify({ version: 2, progress: { quest: { date: today, board, moves: 3, hints: 0, ...bad } } });
+    assert.equal(L.parseStore(raw, today).progress.quest, undefined, `거부해야 함: ${JSON.stringify(bad)}`);
+  }
+  const badResult = JSON.stringify({ version: 2, history: { quest: { [today]: { moves: 22, hints: 0, minMoves: 22, timeMs: 'fast' } } } });
+  assert.deepEqual(L.parseStore(badResult, today).history.quest, {});
+});
+
+test('같은 움직임이면 풀이 시간이 짧은 기록이 더 좋다', () => {
+  const s = L.createStore();
+  const date = '2026-11-01';
+  L.recordResult(s, 'quest', date, { moves: 23, hints: 0, minMoves: 21, attempts: 1, timeMs: 300000 });
+  assert.equal(L.recordResult(s, 'quest', date, { moves: 23, hints: 0, minMoves: 21, attempts: 2, timeMs: 200000 }), true);
+  assert.equal(L.recordResult(s, 'quest', date, { moves: 23, hints: 0, minMoves: 21, attempts: 3, timeMs: 250000 }), false);
+  assert.equal(L.recordResult(s, 'quest', date, { moves: 22, hints: 0, minMoves: 21, attempts: 4, timeMs: 900000 }), true, '움직임이 우선');
+  assert.deepEqual(s.history.quest[date], { moves: 22, hints: 0, minMoves: 21, attempts: 4, timeMs: 900000 });
+});
+
+test('퀘스트 연속 클리어: 당일 퀘스트만 센다', () => {
+  const today = '2026-11-01';
+  const s = L.createStore();
+  s.history.quest['2026-10-31'] = { moves: 25, hints: 0, minMoves: 22, timeMs: 400000 };
+  s.history.quest['2026-10-30'] = { moves: 24, hints: 0, minMoves: 22, timeMs: 250000 };
+  s.history.quest['2026-10-29'] = { moves: 24, hints: 0, minMoves: 22, late: true }; // 나중에 푼 날
+  s.history.easy['2026-10-28'] = { moves: 4, hints: 0, minMoves: 4 }; // 다른 난이도는 무관
+  assert.deepEqual(L.questStats(s, today), { cleared: 3, current: 2, best: 2, fastestMs: 250000 });
+  assert.deepEqual(L.questStats(L.createStore(), today), { cleared: 0, current: 0, best: 0, fastestMs: null });
+  assert.equal(L.streaks(s, today).current, 2, '전체 연속에도 퀘스트 클리어 포함');
+});
+
+test('퀘스트 공유 문구: 시간·도전 횟수·퀘스트 연속', () => {
+  const date = '2026-11-01';
+  const p = L.generatePuzzle(date, 'quest');
+  const result = { moves: p.minMoves + 1, hints: 0, minMoves: p.minMoves, attempts: 2, timeMs: 192000 };
+  const lines = L.resultShareText({ date, difficulty: 'quest', board: p.board, result, streak: 4, questStreak: 3 }).split('\n');
+  assert.deepEqual(lines.slice(-3), ['⏱ 3:12 · 2번째 도전', '🏆 퀘스트 3일 연속 클리어', '🔥 4일 연속 성공']);
+  const s = L.createStore();
+  s.history.quest[date] = result;
+  assert.ok(L.dailyShareText(s, date).includes('퀘스트 6×6') && L.dailyShareText(s, date).includes('⏱3:12'));
+});

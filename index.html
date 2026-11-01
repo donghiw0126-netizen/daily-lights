@@ -69,7 +69,8 @@
 
       <div id="questBar" class="quest-bar" hidden>
         <span class="quest-badge" aria-hidden="true">🏆</span>
-        <span><strong>오늘의 퀘스트</strong> · <span id="questRule">힌트 없이 정해진 횟수 안에 모든 불 끄기</span></span>
+        <span class="quest-text"><strong>오늘의 퀘스트</strong> · <span id="questRule">힌트 없이 정해진 횟수 안에 모든 불 끄기</span>
+          <span id="questMeta" class="quest-meta">⏱ 0:00 · 1번째 도전</span></span>
       </div>
 
       <div class="game-header">
@@ -147,6 +148,7 @@
       <div class="summary-tile"><span>퍼펙트</span><strong id="totalPerfect">0</strong><small>회 <span aria-hidden="true">🌟</span></small></div>
     </div>
     <p id="streakNote" class="streak-note"></p>
+    <p id="questSummary" class="quest-summary"></p>
 
     <section class="calendar" aria-labelledby="calendarTitle">
       <div class="calendar-head">

@@ -432,6 +432,17 @@ footer p { margin: 0; }
   word-break: keep-all;
 }
 .quest-bar strong { color: #fff; }
+.quest-meta { display: block; margin-top: 2px; color: #c49bff; font-weight: 700; font-variant-numeric: tabular-nums; }
+.quest-summary {
+  margin: -8px 0 18px;
+  padding: 9px 12px;
+  border-radius: 10px;
+  background: #241d3a;
+  color: #e6d9ff;
+  font-size: 12px;
+  text-align: center;
+  word-break: keep-all;
+}
 .quest-badge { font-size: 20px; }
 
 /* 지난 퍼즐 안내줄 */

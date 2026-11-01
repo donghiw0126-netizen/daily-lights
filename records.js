@@ -28,6 +28,13 @@ window.DailyLightsRecords = (function () {
     $('#totalDays').textContent = String(total.days);
     $('#totalPerfect').textContent = String(total.perfect);
     $('#streakNote').textContent = streakNote(streak);
+
+    // 🏆 퀘스트 요약: 클리어 횟수, 연속 클리어(당일 기준), 최단 시간
+    const quest = Logic.questStats(store, today);
+    const fastest = quest.fastestMs === null ? '' : ` · 최단 ${Logic.formatDuration(quest.fastestMs)}`;
+    $('#questSummary').textContent = quest.cleared
+      ? `🏆 퀘스트 클리어 ${quest.cleared}회 · 연속 ${quest.current}일 · 최고 연속 ${quest.best}일${fastest}`
+      : '🏆 아직 깬 퀘스트가 없어요. 6×6 퀘스트에 도전해 보세요!';
     $('#shareToday').disabled = !streak.todayCleared;
     $('#shareToday').title = streak.todayCleared ? '' : '오늘 퍼즐을 하나 이상 풀면 공유할 수 있어요.';
 

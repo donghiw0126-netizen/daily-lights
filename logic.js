@@ -209,28 +209,43 @@
 
   const isCount = (v, min = 0) => Number.isSafeInteger(v) && v >= min && v <= MAX_SAVED_COUNT;
 
+  // 없어도 되는 값(예전 저장 데이터에는 없음): 있으면 정해진 범위의 정수여야 함
+  const optionalCount = (v, min = 0, max = MAX_SAVED_COUNT) => v === undefined || (Number.isSafeInteger(v) && v >= min && v <= max);
+  const MAX_TIME_MS = 24 * 60 * 60 * 1000;
+
+  // 진행 중인 판. attempts(도전 횟수)·elapsedMs(풀이 시간)는 퀘스트용이며 없어도 됨
   function validBoardState(p, difficulty) {
     const { size } = DIFFICULTIES[difficulty];
     return !!p && Array.isArray(p.board) && p.board.length === size * size
       && p.board.every(v => typeof v === 'boolean')
       && isCount(p.moves) && isCount(p.hints)
+      && optionalCount(p.attempts, 1) && optionalCount(p.elapsedMs, 0, MAX_TIME_MS)
       && solve(p.board, size) !== null; // 정상 플레이로는 나올 수 없는 보드는 거부
   }
   const validProgress = (p, difficulty, today) => validBoardState(p, difficulty) && p.date === today;
   const validArchive = (p, difficulty, today) => validBoardState(p, difficulty) && isArchiveDate(p.date, today);
-  const copyBoardState = p => ({ date: p.date, board: p.board.slice(), moves: p.moves, hints: p.hints });
+  function copyBoardState(p) {
+    const state = { date: p.date, board: p.board.slice(), moves: p.moves, hints: p.hints };
+    if (p.attempts !== undefined) state.attempts = p.attempts;
+    if (p.elapsedMs !== undefined) state.elapsedMs = p.elapsedMs;
+    return state;
+  }
 
+  // 성공 기록. late·attempts(도전 횟수)·timeMs(풀이 시간)는 없어도 됨
   function validResult(r, difficulty) {
     const { size } = DIFFICULTIES[difficulty];
     return !!r && isCount(r.moves, 1) && isCount(r.hints)
       && Number.isSafeInteger(r.minMoves) && r.minMoves >= 1 && r.minMoves <= size * size
-      && (r.late === undefined || typeof r.late === 'boolean');
+      && (r.late === undefined || typeof r.late === 'boolean')
+      && optionalCount(r.attempts, 1) && optionalCount(r.timeMs, 0, MAX_TIME_MS);
   }
 
-  // 기록 한 개를 정해진 모양으로 복사 (late 는 true 일 때만 남김)
+  // 기록 한 개를 정해진 모양으로 복사 (late 는 true 일 때만, 나머지 선택 값은 있을 때만 남김)
   function copyResult(r) {
     const result = { moves: r.moves, hints: r.hints, minMoves: r.minMoves };
     if (r.late === true) result.late = true;
+    if (r.attempts !== undefined) result.attempts = r.attempts;
+    if (r.timeMs !== undefined) result.timeMs = r.timeMs;
     return result;
   }
 
@@ -274,11 +289,13 @@
   // 더 좋은 기록인가?
   // 1) 당일에 푼 기록이 나중에 푼 기록보다 항상 우선 (지난 퍼즐로 당일 기록을 덮어쓰지 않음)
   // 2) 힌트를 덜 쓴 쪽 → 3) 같으면 움직임이 적은 쪽
+  // 4) 움직임도 같으면 풀이 시간이 짧은 쪽 (둘 다 시간이 있을 때만)
   function isBetterResult(next, prev) {
     if (!prev) return true;
     if (Boolean(next.late) !== Boolean(prev.late)) return !next.late;
     if (next.hints !== prev.hints) return next.hints < prev.hints;
-    return next.moves < prev.moves;
+    if (next.moves !== prev.moves) return next.moves < prev.moves;
+    return next.timeMs !== undefined && prev.timeMs !== undefined && next.timeMs < prev.timeMs;
   }
 
   // 성공 기록을 남깁니다. 같은 날 다시 풀었다면 더 좋은 기록만 남깁니다.
@@ -302,9 +319,10 @@
   // ── 연속 기록과 전체 통계 ────────────────────────────────
 
   // 어느 난이도든 하나라도 성공한 날짜들 (onTimeOnly: 당일에 푼 기록만)
-  function clearedDates(store, onTimeOnly = false) {
+  // ids: 셀 난이도 목록 (기본: 전체)
+  function clearedDates(store, onTimeOnly = false, ids = DIFFICULTY_IDS) {
     const dates = new Set();
-    for (const id of DIFFICULTY_IDS) {
+    for (const id of ids) {
       for (const [date, r] of Object.entries(store.history[id])) if (!onTimeOnly || !r.late) dates.add(date);
     }
     return dates;
@@ -314,8 +332,9 @@
   //   오늘 아직 안 풀었으면 어제까지 센 값 (오늘 자정까지는 연속이 끊기지 않은 것으로 봄)
   // best: 지금까지 가장 길었던 연속 성공 일수
   // 지난 퍼즐을 나중에 푼 기록(late)은 연속에 넣지 않습니다.
-  function streaks(store, today) {
-    const days = clearedDates(store, true);
+  // ids 를 ['quest'] 로 주면 퀘스트 연속 클리어를 셉니다.
+  function streaks(store, today, ids = DIFFICULTY_IDS) {
+    const days = clearedDates(store, true, ids);
     const todayCleared = days.has(today);
     let current = 0;
     for (let d = todayCleared ? today : addDays(today, -1); days.has(d); d = addDays(d, -1)) current++;
@@ -335,6 +354,33 @@
     let perfect = 0;
     for (const id of DIFFICULTY_IDS) perfect += statsFor(store, id).perfect;
     return { days: clearedDates(store).size, perfect };
+  }
+
+  // 퀘스트 통계: 클리어 횟수, 연속 클리어(당일 기준), 최단 시간
+  function questStats(store, today) {
+    const results = Object.values(store.history.quest);
+    const times = results.map(r => r.timeMs).filter(t => t !== undefined);
+    const { current, best } = streaks(store, today, ['quest']);
+    return { cleared: results.length, current, best, fastestMs: times.length ? Math.min(...times) : null };
+  }
+
+  // ── 시간 표시 ───────────────────────────────────────────
+  // 시계 모양: 3:07, 1:02:03
+  function formatClock(ms) {
+    const total = Math.floor(Math.max(ms, 0) / 1000);
+    const h = Math.floor(total / 3600);
+    const m = Math.floor((total % 3600) / 60);
+    const s = String(total % 60).padStart(2, '0');
+    return h ? `${h}:${String(m).padStart(2, '0')}:${s}` : `${m}:${s}`;
+  }
+  // 문장 모양: 3분 7초, 45초, 1시간 2분
+  function formatDuration(ms) {
+    const total = Math.floor(Math.max(ms, 0) / 1000);
+    const h = Math.floor(total / 3600);
+    const m = Math.floor((total % 3600) / 60);
+    const s = total % 60;
+    if (h) return `${h}시간 ${m}분`;
+    return m ? `${m}분 ${s}초` : `${s}초`;
   }
 
   // ── 공유 문구 (이모지 그림) ─────────────────────────────
@@ -360,7 +406,8 @@
 
   // 한 판 결과 공유
   // options: { date, difficulty, board(시작 보드), result: { moves, hints, minMoves }, streak, archive }
-  function resultShareText({ date, difficulty, board, result, streak = 0, archive = false }) {
+  // questStreak: 퀘스트 연속 클리어 일수 (퀘스트일 때만 표시)
+  function resultShareText({ date, difficulty, board, result, streak = 0, questStreak = 0, archive = false }) {
     const { label, size, quest } = DIFFICULTIES[difficulty];
     let summary = isPerfect(result)
       ? `🌟 퍼펙트! ${result.moves}번`
@@ -371,7 +418,14 @@
       boardEmoji(board, size),
       `${movesBar(result)} ${summary}`,
     ];
+    if (quest) {
+      const details = [];
+      if (result.timeMs !== undefined) details.push(`⏱ ${formatClock(result.timeMs)}`);
+      if (result.attempts) details.push(`${result.attempts}번째 도전`);
+      if (details.length) lines.push(details.join(' · '));
+    }
     if (result.hints) lines.push(`💡 힌트 ${result.hints}회`);
+    if (!archive && quest && questStreak > 1) lines.push(`🏆 퀘스트 ${questStreak}일 연속 클리어`);
     if (!archive && streak > 1) lines.push(`🔥 ${streak}일 연속 성공`);
     return lines.join('\n');
   }
@@ -385,6 +439,7 @@
       let text = '⬜ 아직';
       if (r && isPerfect(r)) text = `${movesBar(r)} 🌟 퍼펙트`;
       else if (r) text = `${movesBar(r)} ${r.moves}번${r.hints ? ` 💡${r.hints}` : ''}`;
+      if (r && r.timeMs !== undefined) text += ` ⏱${formatClock(r.timeMs)}`;
       lines.push(`${label} ${size}×${size}  ${text}`);
     }
     const { current } = streaks(store, today);
@@ -430,7 +485,8 @@
     seedFromString, seededRandom,
     affected, press, isSolved, solve, hint, generatePuzzle,
     createStore, parseStore, serializeStore, isPerfect, isBetterResult, recordResult, statsFor,
-    clearedDates, streaks, totalStats, boardEmoji, movesBar, resultShareText, dailyShareText,
+    clearedDates, streaks, totalStats, questStats, formatClock, formatDuration,
+    boardEmoji, movesBar, resultShareText, dailyShareText,
     createBackup, parseBackup, mergeHistory,
   };
 });
