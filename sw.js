@@ -9,6 +9,8 @@ const CORE_FILES = [
   './',
   `./styles.css?v=${VERSION}`,
   `./logic.js?v=${VERSION}`,
+  `./i18n.js?v=${VERSION}`,
+  `./settings.js?v=${VERSION}`,
   `./records.js?v=${VERSION}`,
   `./game.js?v=${VERSION}`,
   `./site-config.js?v=${VERSION}`,

@@ -60,7 +60,6 @@ button:focus-visible { outline: 3px solid #fff; outline-offset: 2px; }
   cursor: pointer;
   transition: background .15s, border-color .15s;
 }
-.sound-toggle[aria-pressed="true"] { border-color: #3c6b5c; color: var(--mint-light); }
 .streak-badge { font-weight: 800; color: #ffd27a; font-variant-numeric: tabular-nums; }
 
 /* ── 소개 ─────────────────────────────────────── */
@@ -93,7 +92,7 @@ button:focus-visible { outline: 3px solid #fff; outline-offset: 2px; }
 }
 .difficulty label { position: relative; }
 .difficulty input { position: absolute; inset: 0; opacity: 0; margin: 0; cursor: pointer; }
-.difficulty span {
+.difficulty label > span { /* 탭 버튼 자체에만 (안쪽 글자 span 에는 적용 안 함) */
   display: flex;
   align-items: center;
   justify-content: center;
@@ -328,8 +327,8 @@ footer p { margin: 0; }
   .topbar { padding-top: max(24px, env(safe-area-inset-top)); }
 }
 
-/* ── 기록 창 ──────────────────────────────────── */
-.records {
+/* ── 기록 창·설정 창 ──────────────────────────── */
+.records, .settings {
   width: min(100% - 24px, 480px);
   max-height: calc(100% - 24px);
   padding: 22px;
@@ -339,8 +338,62 @@ footer p { margin: 0; }
   color: var(--text);
   box-shadow: 0 30px 90px #000a;
 }
-.records::backdrop { background: #050a14cc; backdrop-filter: blur(3px); }
-.records[open] { animation: pop .25s ease-out; }
+.settings { width: min(100% - 24px, 400px); }
+.records::backdrop, .settings::backdrop { background: #050a14cc; backdrop-filter: blur(3px); }
+.records[open], .settings[open] { animation: pop .25s ease-out; }
+
+/* 설정 항목 */
+.setting-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.setting-list > li { padding: 12px 14px; border-radius: 14px; background: #101a29; }
+.setting-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 36px; font-size: 14px; font-weight: 700; cursor: pointer; }
+.setting-help { margin: 6px 0 0; font-size: 12px; line-height: 1.5; color: var(--muted); word-break: keep-all; }
+/* 켜기/끄기 스위치 (체크박스를 스위치 모양으로) */
+.switch {
+  appearance: none;
+  flex: none;
+  position: relative;
+  width: 48px;
+  height: 28px;
+  margin: 0;
+  border-radius: 100px;
+  background: #33425a;
+  cursor: pointer;
+  transition: background .2s;
+}
+.switch::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform .2s;
+}
+.switch:checked { background: var(--mint); }
+.switch:checked::after { transform: translateX(20px); }
+.switch:disabled { opacity: .35; cursor: not-allowed; }
+.switch:focus-visible { outline: 3px solid #fff; outline-offset: 2px; }
+.setting-language { border: 0; margin: 0; padding: 0; }
+.setting-language legend { padding: 0; margin-bottom: 10px; font-size: 14px; font-weight: 700; }
+.language-options { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.language-options label { position: relative; }
+.language-options input { position: absolute; inset: 0; opacity: 0; margin: 0; cursor: pointer; }
+.language-options span {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 42px;
+  border-radius: 10px;
+  background: #0b1220;
+  color: var(--muted);
+  font-weight: 700;
+  pointer-events: none;
+}
+.language-options input:checked + span { background: #2a394d; color: var(--text); box-shadow: inset 0 0 0 2px var(--mint); }
+.language-options input:focus-visible + span { outline: 3px solid #fff; outline-offset: 1px; }
+.settings-tutorial { width: 100%; min-height: 44px; margin-top: 14px; border: 0; border-radius: 11px; font-weight: 700; cursor: pointer; }
 .records-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
 .records-head h2 { margin: 0; font-size: 19px; letter-spacing: -.03em; }
 .close-button, .month-button {
@@ -577,7 +630,9 @@ footer p { margin: 0; }
   .game { padding: 16px; border-radius: 20px; }
   .game-header { margin-bottom: 16px; }
   .difficulty { margin-bottom: 16px; }
-  .difficulty span { flex-direction: column; gap: 0; line-height: 1.2; min-height: 44px; }
+  .difficulty label > span { flex-direction: column; gap: 0; line-height: 1.2; min-height: 44px; }
+  /* 좁은 화면: 퀘스트 탭의 🏆는 오른쪽 위에 작게 (다른 탭과 줄 맞춤) */
+  .quest-tab .quest-icon { position: absolute; top: 3px; right: 5px; font-size: 10px; }
   .board { gap: 6px; }
   .tile { border-radius: 9px; }
   .guide-grid { grid-template-columns: 1fr; }

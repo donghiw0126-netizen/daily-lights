@@ -2,6 +2,8 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const L = require('../logic.js');
+const I18n = require('../i18n.js');
+const ko = I18n.translator('ko'); // 공유 문구는 번역 함수를 받습니다 (한국어 기준으로 검사)
 
 const DAY = 24 * 60 * 60 * 1000;
 // 2024-01-01 부터 n일치 날짜 문자열
@@ -263,7 +265,7 @@ test('연속 성공: 여러 난이도를 같은 날 풀어도 하루로 세고, 
 test('오늘의 기록 공유 문구', () => {
   const today = '2026-11-01';
   const s = storeWith([['easy', today, 4], ['normal', today, 7, 2, 5], ['easy', '2026-10-31', 4]]);
-  assert.equal(L.dailyShareText(s, today), [
+  assert.equal(L.dailyShareText(s, today, ko), [
     'Daily Lights 2026-11-01',
     '초급 3×3  🟩🟩🟩🟩 🌟 퍼펙트',
     '중급 4×4  🟩🟩🟩🟩🟩🟨🟨 7번 💡2',
@@ -284,17 +286,17 @@ test('공유 그림: 시작 보드와 결과 막대', () => {
 test('한 판 결과 공유 문구: 정답(누른 칸)은 들어가지 않는다', () => {
   const date = '2026-11-01';
   const { board, minMoves } = L.generatePuzzle(date, 'easy');
-  const text = L.resultShareText({ date, difficulty: 'easy', board, result: { moves: minMoves + 2, hints: 1, minMoves }, streak: 3 });
+  const text = L.resultShareText({ date, difficulty: 'easy', board, result: { moves: minMoves + 2, hints: 1, minMoves }, streak: 3, t: ko });
   const lines = text.split('\n');
   assert.equal(lines[0], 'Daily Lights 2026-11-01 · 초급 3×3');
   assert.equal(lines.slice(1, 4).join('\n'), L.boardEmoji(board, 3), '시작 보드 그림');
   assert.equal(lines[4], `${L.movesBar({ moves: minMoves + 2, minMoves })} ${minMoves + 2}번 (최소 ${minMoves})`);
   assert.deepEqual(lines.slice(5), ['💡 힌트 1회', '🔥 3일 연속 성공']);
 
-  const perfect = L.resultShareText({ date, difficulty: 'easy', board, result: { moves: minMoves, hints: 0, minMoves }, streak: 1 });
+  const perfect = L.resultShareText({ date, difficulty: 'easy', board, result: { moves: minMoves, hints: 0, minMoves }, streak: 1, t: ko });
   assert.ok(perfect.endsWith(`🌟 퍼펙트! ${minMoves}번`), '퍼펙트, 연속 1일은 표시 안 함');
 
-  const archive = L.resultShareText({ date, difficulty: 'easy', board, result: { moves: minMoves, hints: 0, minMoves }, streak: 5, archive: true });
+  const archive = L.resultShareText({ date, difficulty: 'easy', board, result: { moves: minMoves, hints: 0, minMoves }, streak: 5, archive: true, t: ko });
   assert.ok(archive.startsWith('Daily Lights 2026-11-01 (지난 퍼즐)') && !archive.includes('🔥'), '지난 퍼즐은 연속 표시 안 함');
 });
 
@@ -426,7 +428,7 @@ test('퀘스트: 10년치 모두 6×6, 최소 20~24번, 제한 = 최소 + 여유
 test('퀘스트 공유 문구', () => {
   const date = '2026-11-01';
   const p = L.generatePuzzle(date, 'quest');
-  const text = L.resultShareText({ date, difficulty: 'quest', board: p.board, result: { moves: p.minMoves + 3, hints: 0, minMoves: p.minMoves }, streak: 2 });
+  const text = L.resultShareText({ date, difficulty: 'quest', board: p.board, result: { moves: p.minMoves + 3, hints: 0, minMoves: p.minMoves }, streak: 2, t: ko });
   const lines = text.split('\n');
   assert.equal(lines[0], 'Daily Lights 2026-11-01 · 🏆 퀘스트 6×6');
   assert.equal(lines.length, 1 + 6 + 1 + 1, '제목 + 6줄 보드 + 결과 + 연속');
@@ -436,13 +438,10 @@ test('퀘스트 공유 문구', () => {
 
 // ── 퀘스트: 도전 횟수·풀이 시간·연속 클리어 ─────────────────────
 
-test('시간 표시', () => {
+test('시간 표시 (시계 모양)', () => {
   assert.equal(L.formatClock(0), '0:00');
   assert.equal(L.formatClock(187999), '3:07', '초 단위는 버림');
   assert.equal(L.formatClock(3723000), '1:02:03');
-  assert.equal(L.formatDuration(45000), '45초');
-  assert.equal(L.formatDuration(187000), '3분 7초');
-  assert.equal(L.formatDuration(3723000), '1시간 2분');
 });
 
 test('도전 횟수·풀이 시간: 저장·복원, 예전 데이터 호환, 잘못된 값 거부', () => {
@@ -488,9 +487,9 @@ test('퀘스트 공유 문구: 시간·도전 횟수·퀘스트 연속', () => {
   const date = '2026-11-01';
   const p = L.generatePuzzle(date, 'quest');
   const result = { moves: p.minMoves + 1, hints: 0, minMoves: p.minMoves, attempts: 2, timeMs: 192000 };
-  const lines = L.resultShareText({ date, difficulty: 'quest', board: p.board, result, streak: 4, questStreak: 3 }).split('\n');
+  const lines = L.resultShareText({ date, difficulty: 'quest', board: p.board, result, streak: 4, questStreak: 3, t: ko }).split('\n');
   assert.deepEqual(lines.slice(-3), ['⏱ 3:12 · 2번째 도전', '🏆 퀘스트 3일 연속 클리어', '🔥 4일 연속 성공']);
   const s = L.createStore();
   s.history.quest[date] = result;
-  assert.ok(L.dailyShareText(s, date).includes('퀘스트 6×6') && L.dailyShareText(s, date).includes('⏱3:12'));
+  assert.ok(L.dailyShareText(s, date, ko).includes('퀘스트 6×6') && L.dailyShareText(s, date, ko).includes('⏱3:12'));
 });

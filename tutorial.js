@@ -3,6 +3,8 @@
 // 아래쪽 "처음 안내 다시 보기" 버튼으로 언제든 다시 볼 수 있습니다.
 window.DailyLightsTutorial = (function () {
   const Logic = window.DailyLightsLogic;
+  const I18n = window.DailyLightsI18n;
+  const t = (key, params) => I18n.t(key, params);
   const SEEN_KEY = 'daily-lights-tutorial-seen';
   const STORE_KEY = 'daily-lights-v2'; // game.js 와 같은 저장 키 (기존 사용자인지 확인용)
 
@@ -43,23 +45,21 @@ window.DailyLightsTutorial = (function () {
     const board = document.createElement('div');
     board.className = 'tutorial-board practice';
     board.setAttribute('role', 'group');
-    board.setAttribute('aria-label', '연습용 3×3 보드');
+    board.setAttribute('aria-label', t('tut.2.aria'));
     const note = document.createElement('p');
     note.className = 'tutorial-note';
     note.setAttribute('aria-live', 'polite');
-    note.textContent = '👆 가운데 칸을 눌러 보세요.';
+    note.textContent = t('tut.2.try');
 
     const cells = Array.from({ length: 9 }, (_, i) => {
       const cell = document.createElement('button');
       cell.type = 'button';
-      cell.setAttribute('aria-label', `${Math.floor(i / 3) + 1}행 ${(i % 3) + 1}열`);
+      cell.setAttribute('aria-label', t('tut.2.cell', { row: Math.floor(i / 3) + 1, col: (i % 3) + 1 }));
       cell.addEventListener('click', () => {
         Logic.press(state, i, 3);
         cells.forEach((c, j) => c.classList.toggle('on', state[j]));
         const lit = state.filter(Boolean).length;
-        note.textContent = lit === 0
-          ? '모두 꺼졌어요! 같은 칸을 두 번 누르면 원래대로 돌아와요.'
-          : '좋아요! 누른 칸과 상하좌우가 함께 바뀌었죠?';
+        note.textContent = t(lit === 0 ? 'tut.2.clear' : 'tut.2.nice');
       });
       board.appendChild(cell);
       return cell;
@@ -87,10 +87,9 @@ window.DailyLightsTutorial = (function () {
 
   // ── 단계 내용 ──────────────────────────────────────────
 
+  // 각 단계의 그림. 제목·설명은 i18n.js 의 tut.1.title, tut.1.text … 에 있습니다.
   const STEPS = [
     {
-      title: '모든 불을 끄면 성공!',
-      text: '빛나는 타일을 하나도 남김없이 꺼 보세요. 적게 누를수록 좋은 기록이에요.',
       visual: () => {
         const row = document.createElement('div');
         row.className = 'tutorial-compare';
@@ -98,32 +97,24 @@ window.DailyLightsTutorial = (function () {
         arrow.className = 'tutorial-arrow';
         arrow.setAttribute('aria-hidden', 'true');
         arrow.textContent = '→';
-        row.append(miniBoard([0, 2, 4, 5, 7], '시작'), arrow, miniBoard([], '성공'));
+        row.append(miniBoard([0, 2, 4, 5, 7], t('tut.1.from')), arrow, miniBoard([], t('tut.1.to')));
         return row;
       },
     },
+    { visual: practiceBoard },
     {
-      title: '누르면 십자 모양으로 바뀌어요',
-      text: '칸을 누르면 그 칸과 위·아래·양옆의 불이 함께 켜지거나 꺼져요. 직접 눌러 보세요!',
-      visual: practiceBoard,
-    },
-    {
-      title: '이렇게 풀어 보세요',
-      text: '막막할 때 써 보는 요령이에요.',
       visual: () => tips([
-        ['⬇️', '윗줄에 켜진 불이 있으면 바로 아랫칸을 누르세요. 한 줄씩 내려가며 정리해요.'],
-        ['💡', '막히면 힌트 버튼! 정답으로 가는 다음 칸을 알려 줘요.'],
-        ['🌟', '힌트 없이 최소 횟수로 풀면 퍼펙트예요.'],
+        ['⬇️', t('tut.3.tip1')],
+        ['💡', t('tut.3.tip2')],
+        ['🌟', t('tut.3.tip3')],
       ]),
     },
     {
-      title: '매일 새로운 퍼즐',
-      text: '초급 3×3부터 시작해 보세요. 친구들과 같은 퍼즐로 기록을 비교할 수 있어요.',
       visual: () => tips([
-        ['🕛', '매일 자정(한국 시간)에 새 퍼즐이 나와요.'],
-        ['🔥', '매일 풀면 연속 성공 기록이 쌓여요.'],
-        ['🏆', '자신 있다면 6×6 일일 퀘스트에 도전! 힌트 없이 정해진 횟수 안에 풀어야 해요.'],
-        ['📅', '놓친 날은 📊 기록의 달력에서 다시 풀 수 있어요.'],
+        ['🕛', t('tut.4.tip1')],
+        ['🔥', t('tut.4.tip2')],
+        ['🏆', t('tut.4.tip3')],
+        ['📅', t('tut.4.tip4')],
       ]),
     },
   ];
@@ -131,14 +122,13 @@ window.DailyLightsTutorial = (function () {
   // ── 화면 ───────────────────────────────────────────────
 
   function render() {
-    const s = STEPS[step];
-    $('#tutorialTitle').textContent = s.title;
-    $('#tutorialText').textContent = s.text;
+    $('#tutorialTitle').textContent = t(`tut.${step + 1}.title`);
+    $('#tutorialText').textContent = t(`tut.${step + 1}.text`);
     $('#tutorialCount').textContent = `${step + 1} / ${STEPS.length}`;
-    visualEl.replaceChildren(s.visual());
+    visualEl.replaceChildren(STEPS[step].visual());
     document.querySelectorAll('#tutorialDots i').forEach((dot, i) => dot.classList.toggle('active', i === step));
     prevEl.hidden = step === 0;
-    nextEl.textContent = step === STEPS.length - 1 ? '시작하기' : '다음';
+    nextEl.textContent = t(step === STEPS.length - 1 ? 'tut.start' : 'tut.next');
   }
 
   function go(delta) {
@@ -189,6 +179,7 @@ window.DailyLightsTutorial = (function () {
     if (event.key === 'ArrowLeft') go(-1);
   });
   $('#openTutorial').addEventListener('click', open);
+  window.addEventListener('daily-lights:language', () => { if (dialog.open) render(); }); // 언어를 바꾸면 다시 그림
 
   if (isFirstVisit()) open();
   return { open, isFirstVisit };

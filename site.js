@@ -2,6 +2,7 @@
 // 사이트 부가 기능: 후원 버튼, 방문자 통계 (설정은 site-config.js), 앱 설치·오프라인(PWA)
 // 게임 코드와 분리되어 있어서, 게임에 문제가 생겨도 영향을 주고받지 않습니다.
 window.DailyLightsSite = (function () {
+  const I18n = window.DailyLightsI18n;
   const ANALYTICS_SRC = 'https://static.cloudflareinsights.com/beacon.min.js';
   const LOCAL_HOSTS = ['', 'localhost', '127.0.0.1', '[::1]']; // '' = 파일로 직접 연 경우
   const INSTALL_DISMISSED_KEY = 'daily-lights-install-dismissed';
@@ -25,7 +26,8 @@ window.DailyLightsSite = (function () {
       link.hidden = !url;
       if (!url) return;
       link.href = url;
-      link.textContent = config.donationLabel || '☕ 개발자 응원하기';
+      if (config.donationLabel) link.textContent = config.donationLabel; // 직접 정한 문구가 있으면 그대로
+      else { link.dataset.i18n = 'donate.label'; link.textContent = I18n.t('donate.label'); } // 없으면 언어에 맞게
     });
   }
 
@@ -43,7 +45,9 @@ window.DailyLightsSite = (function () {
     script.src = ANALYTICS_SRC;
     script.setAttribute('data-cf-beacon', JSON.stringify({ token }));
     document.head.appendChild(script);
-    document.querySelector('#privacyNote').textContent = '쿠키 없는 익명 방문 통계만 사용';
+    const note = document.querySelector('#privacyNote');
+    note.dataset.i18n = 'footer.analytics'; // 언어를 바꿔도 이 문구가 유지되도록
+    note.textContent = I18n.t('footer.analytics');
     return true;
   }
 
@@ -89,9 +93,9 @@ window.DailyLightsSite = (function () {
     const card = document.querySelector('#installCard');
     if (isInstalledApp() || installDismissed()) { card.hidden = true; return false; }
     document.querySelector('#installButton').hidden = mode !== 'prompt';
-    document.querySelector('#installHelp').textContent = mode === 'ios'
-      ? 'Safari 아래쪽 공유 버튼(□↑)을 누르고 "홈 화면에 추가"를 고르세요.'
-      : '홈 화면에서 바로 열고, 인터넷이 없어도 플레이할 수 있어요.';
+    const help = document.querySelector('#installHelp');
+    help.dataset.i18n = mode === 'ios' ? 'install.ios' : 'install.help'; // 언어를 바꿔도 유지
+    help.textContent = I18n.t(help.dataset.i18n);
     card.hidden = false;
     return true;
   }

@@ -53,7 +53,7 @@ test('서비스 워커: 저장 목록의 파일이 모두 실제로 있다', () 
 
 test('서비스 워커: index.html 이 불러오는 스크립트·스타일을 모두 저장한다 (오프라인 실행)', () => {
   const used = [...html.matchAll(/(?:src|href)="(\.\/[^"]+\?v=__VERSION__)"/g)].map(m => stripQuery(m[1]));
-  assert.deepEqual(used.sort(), ['game.js', 'logic.js', 'records.js', 'site-config.js', 'site.js', 'styles.css', 'tutorial.js']);
+  assert.deepEqual(used.sort(), ['game.js', 'i18n.js', 'logic.js', 'records.js', 'settings.js', 'site-config.js', 'site.js', 'styles.css', 'tutorial.js']);
   for (const file of used) assert.ok(coreFiles.includes(file), `sw.js 가 저장하지 않는 파일: ${file}`);
   assert.match(sw, /`\.\/game\.js\?v=\$\{VERSION\}`/, '저장 주소에도 같은 ?v=버전 이 붙어야 함');
 });

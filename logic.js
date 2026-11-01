@@ -11,13 +11,13 @@
   const MAX_SAVED_COUNT = 100000;
   const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
-  // 난이도: 보드 크기와 "최소 해답 길이"의 목표 범위
+  // 난이도: 보드 크기와 "최소 해답 길이"의 목표 범위 (이름은 i18n.js 의 diff.easy 등)
   // quest: 일일 퀘스트 — 힌트 금지, "최소 + extraMoves"번 안에 풀어야 클리어
   const DIFFICULTIES = {
-    easy:   { size: 3, label: '초급', minMoves: [4, 6] },
-    normal: { size: 4, label: '중급', minMoves: [5, 7] },
-    hard:   { size: 5, label: '고급', minMoves: [9, 12] },
-    quest:  { size: 6, label: '퀘스트', minMoves: [20, 24], quest: true, extraMoves: 8 },
+    easy:   { size: 3, minMoves: [4, 6] },
+    normal: { size: 4, minMoves: [5, 7] },
+    hard:   { size: 5, minMoves: [9, 12] },
+    quest:  { size: 6, minMoves: [20, 24], quest: true, extraMoves: 8 },
   };
   const DIFFICULTY_IDS = Object.keys(DIFFICULTIES);
   const DEFAULT_DIFFICULTY = 'easy';
@@ -373,15 +373,7 @@
     const s = String(total % 60).padStart(2, '0');
     return h ? `${h}:${String(m).padStart(2, '0')}:${s}` : `${m}:${s}`;
   }
-  // 문장 모양: 3분 7초, 45초, 1시간 2분
-  function formatDuration(ms) {
-    const total = Math.floor(Math.max(ms, 0) / 1000);
-    const h = Math.floor(total / 3600);
-    const m = Math.floor((total % 3600) / 60);
-    const s = total % 60;
-    if (h) return `${h}시간 ${m}분`;
-    return m ? `${m}분 ${s}초` : `${s}초`;
-  }
+  // (문장 모양 "3분 7초 / 3m 7s" 는 언어마다 달라서 i18n.js 의 formatDuration 에 있습니다)
 
   // ── 공유 문구 (이모지 그림) ─────────────────────────────
   // 정답(누른 칸)은 그리지 않습니다. 친구가 보고 따라 할 수 있기 때문입니다.
@@ -407,43 +399,44 @@
   // 한 판 결과 공유
   // options: { date, difficulty, board(시작 보드), result: { moves, hints, minMoves }, streak, archive }
   // questStreak: 퀘스트 연속 클리어 일수 (퀘스트일 때만 표시)
-  function resultShareText({ date, difficulty, board, result, streak = 0, questStreak = 0, archive = false }) {
-    const { label, size, quest } = DIFFICULTIES[difficulty];
+  // t: 번역 함수 (i18n.js 의 t 또는 translator('ko'|'en')) — 공유 문구도 고른 언어로 만듭니다.
+  function resultShareText({ date, difficulty, board, result, streak = 0, questStreak = 0, archive = false, t }) {
+    const { size, quest } = DIFFICULTIES[difficulty];
     let summary = isPerfect(result)
-      ? `🌟 퍼펙트! ${result.moves}번`
-      : `${result.moves}번 (최소 ${result.minMoves})`;
-    if (quest) summary = `🏆 퀘스트 클리어! ${summary}`;
+      ? t('share.perfect', { moves: result.moves })
+      : t('share.moves', { moves: result.moves, min: result.minMoves });
+    if (quest) summary = t('share.quest', { summary });
     const lines = [
-      `Daily Lights ${date}${archive ? ' (지난 퍼즐)' : ''} · ${quest ? '🏆 ' : ''}${label} ${size}×${size}`,
+      `Daily Lights ${date}${archive ? t('share.past') : ''} · ${quest ? '🏆 ' : ''}${t(`diff.${difficulty}`)} ${size}×${size}`,
       boardEmoji(board, size),
       `${movesBar(result)} ${summary}`,
     ];
     if (quest) {
       const details = [];
       if (result.timeMs !== undefined) details.push(`⏱ ${formatClock(result.timeMs)}`);
-      if (result.attempts) details.push(`${result.attempts}번째 도전`);
+      if (result.attempts) details.push(t('share.attempt', { n: result.attempts }));
       if (details.length) lines.push(details.join(' · '));
     }
-    if (result.hints) lines.push(`💡 힌트 ${result.hints}회`);
-    if (!archive && quest && questStreak > 1) lines.push(`🏆 퀘스트 ${questStreak}일 연속 클리어`);
-    if (!archive && streak > 1) lines.push(`🔥 ${streak}일 연속 성공`);
+    if (result.hints) lines.push(t('share.hints', { n: result.hints }));
+    if (!archive && quest && questStreak > 1) lines.push(t('share.questStreak', { n: questStreak }));
+    if (!archive && streak > 1) lines.push(t('share.streak', { n: streak }));
     return lines.join('\n');
   }
 
   // 모든 난이도(퀘스트 포함)의 오늘 결과를 한 번에 공유하는 문구
-  function dailyShareText(store, today) {
+  function dailyShareText(store, today, t) {
     const lines = [`Daily Lights ${today}`];
     for (const id of DIFFICULTY_IDS) {
-      const { label, size } = DIFFICULTIES[id];
+      const { size } = DIFFICULTIES[id];
       const r = store.history[id][today];
-      let text = '⬜ 아직';
-      if (r && isPerfect(r)) text = `${movesBar(r)} 🌟 퍼펙트`;
-      else if (r) text = `${movesBar(r)} ${r.moves}번${r.hints ? ` 💡${r.hints}` : ''}`;
+      let text = t('share.notYet');
+      if (r && isPerfect(r)) text = `${movesBar(r)} ${t('share.perfectShort')}`;
+      else if (r) text = `${movesBar(r)} ${t('share.movesShort', { moves: r.moves })}${r.hints ? ` 💡${r.hints}` : ''}`;
       if (r && r.timeMs !== undefined) text += ` ⏱${formatClock(r.timeMs)}`;
-      lines.push(`${label} ${size}×${size}  ${text}`);
+      lines.push(`${t(`diff.${id}`)} ${size}×${size}  ${text}`);
     }
     const { current } = streaks(store, today);
-    if (current > 0) lines.push(`🔥 ${current}일 연속 성공`);
+    if (current > 0) lines.push(t('share.streak', { n: current }));
     return lines.join('\n');
   }
 
@@ -485,7 +478,7 @@
     seedFromString, seededRandom,
     affected, press, isSolved, solve, hint, generatePuzzle,
     createStore, parseStore, serializeStore, isPerfect, isBetterResult, recordResult, statsFor,
-    clearedDates, streaks, totalStats, questStats, formatClock, formatDuration,
+    clearedDates, streaks, totalStats, questStats, formatClock,
     boardEmoji, movesBar, resultShareText, dailyShareText,
     createBackup, parseBackup, mergeHistory,
   };

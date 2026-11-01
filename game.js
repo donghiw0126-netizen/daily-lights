@@ -2,11 +2,14 @@
 // 화면 담당: 클릭 처리, 그리기, 저장, 효과음, 애니메이션
 // 게임 규칙 자체는 logic.js 에 있습니다.
 const Logic = window.DailyLightsLogic;
+const I18n = window.DailyLightsI18n;
+const Settings = window.DailyLightsSettings;
+const t = (key, params) => I18n.t(key, params); // 화면 문구는 모두 i18n.js 에서
 
-// logic.js 나 records.js 를 불러오지 못했다면(네트워크 오류 등) 안내하고 멈춥니다.
-if (!Logic || !window.DailyLightsRecords) {
-  document.querySelector('#feedback').textContent = '게임 파일을 불러오지 못했어요. 페이지를 새로고침해 주세요.';
-  throw new Error('Daily Lights: logic.js 또는 records.js 를 불러오지 못했습니다.');
+// 필요한 파일을 불러오지 못했다면(네트워크 오류 등) 안내하고 멈춥니다. (번역 파일이 없을 수도 있어 두 언어로)
+if (!Logic || !I18n || !Settings || !window.DailyLightsRecords) {
+  document.querySelector('#feedback').textContent = '게임 파일을 불러오지 못했어요. 새로고침해 주세요. / Failed to load. Please reload.';
+  throw new Error('Daily Lights: 필요한 스크립트 파일을 불러오지 못했습니다.');
 }
 
 const boardEl = document.querySelector('#board');
@@ -18,7 +21,6 @@ const hintEl = document.querySelector('#hint');
 const resetEl = document.querySelector('#reset');
 const dateEl = document.querySelector('#dateTitle');
 const statsEl = document.querySelector('#stats');
-const soundEl = document.querySelector('#sound');
 const recordsButtonEl = document.querySelector('#openRecords');
 const streakBadgeEl = document.querySelector('#streakBadge');
 const hintCountEl = document.querySelector('#hintCount');
@@ -36,8 +38,6 @@ const difficultyInputs = document.querySelectorAll('input[name="difficulty"]');
 
 const STORE_KEY = 'daily-lights-v2';
 const OLD_STORE_KEY = 'daily-lights-v1';          // 3단계 이전 형식 (퍼즐 생성 방식이 바뀌어 더 이상 사용 안 함)
-const SETTINGS_KEY = 'daily-lights-settings-v1';
-const NEW_DAY_MESSAGE = '새로운 날이 시작되어 오늘의 퍼즐을 불러왔어요.';
 const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
 
 let store = Logic.createStore(); // 난이도별 진행 상황 + 기록 (logic.js 참고)
@@ -105,22 +105,15 @@ function persist() {
   saveStore();
 }
 
-// ── 효과음 (Web Audio API로 직접 합성 → 소리 파일 불필요) ──
+// ── 효과음 (Web Audio API로 직접 합성 → 소리 파일 불필요) + 진동 ──
+// 켜고 끄기는 설정 창(settings.js)에서 합니다.
 
 const sound = {
   ctx: null,
-  muted: false,
 
-  load() {
-    try { this.muted = JSON.parse(storageGet(SETTINGS_KEY) || '{}').muted === true; } catch (e) { this.muted = false; }
-  },
-  setMuted(value) {
-    this.muted = value;
-    storageSet(SETTINGS_KEY, JSON.stringify({ muted: value }));
-  },
   // 브라우저는 사용자가 클릭한 뒤에만 소리를 허용하므로 첫 클릭 때 준비합니다.
   context() {
-    if (this.muted) return null;
+    if (Settings.muted) return null;
     try {
       if (!this.ctx) {
         const AudioCtx = window.AudioContext || window.webkitAudioContext;
@@ -146,18 +139,19 @@ const sound = {
     osc.start(start);
     osc.stop(start + duration + 0.02);
   },
-  tap(turnedOn) { this.tone(turnedOn ? 660 : 440, 0, 0.09, 0.06, 'triangle'); },
-  win() { [523, 659, 784, 1047].forEach((f, i) => this.tone(f, i * 0.11, 0.35, 0.07)); },
-  hint() { this.tone(880, 0, 0.1, 0.05); this.tone(1175, 0.08, 0.16, 0.05); },
+  // 소리와 함께 진동도 냅니다 (진동은 지원하는 기기에서 켜 두었을 때만, 숫자는 밀리초)
+  tap(turnedOn) { this.tone(turnedOn ? 660 : 440, 0, 0.09, 0.06, 'triangle'); Settings.vibrate(12); },
+  win() { [523, 659, 784, 1047].forEach((f, i) => this.tone(f, i * 0.11, 0.35, 0.07)); Settings.vibrate([40, 60, 40, 60, 120]); },
+  hint() { this.tone(880, 0, 0.1, 0.05); this.tone(1175, 0.08, 0.16, 0.05); Settings.vibrate(20); },
   reset() { this.tone(330, 0, 0.12, 0.05, 'triangle'); },
-  fail() { [392, 330, 262].forEach((f, i) => this.tone(f, i * 0.14, 0.3, 0.06, 'triangle')); },
+  fail() { [392, 330, 262].forEach((f, i) => this.tone(f, i * 0.14, 0.3, 0.06, 'triangle')); Settings.vibrate([150, 80, 150]); },
 };
 
 // ── 그리기 ──────────────────────────────────────────────
 
 function tileLabel(i, on) {
-  const hinted = i === hintIndex ? ', 힌트' : '';
-  return `${Math.floor(i / size) + 1}행 ${(i % size) + 1}열, ${on ? '켜짐' : '꺼짐'}${hinted}`;
+  const label = t('tile.label', { row: Math.floor(i / size) + 1, col: (i % size) + 1, state: t(on ? 'tile.on' : 'tile.off') });
+  return label + (i === hintIndex ? t('tile.hinted') : '');
 }
 
 // ── 일일 퀘스트 ─────────────────────────────────────────
@@ -199,31 +193,31 @@ function currentElapsed() {
   return lastTickAt === null ? elapsedMs : elapsedMs + Math.min(Date.now() - lastTickAt, IDLE_CAP_MS);
 }
 function paintQuestMeta() {
-  if (isQuest()) questMetaEl.textContent = `⏱ ${Logic.formatClock(currentElapsed())} · ${attempts}번째 도전`;
+  if (isQuest()) questMetaEl.textContent = t('quest.meta', { time: Logic.formatClock(currentElapsed()), n: attempts });
 }
 
 function winMessage() {
   const result = { moves, hints, minMoves: puzzle.minMoves };
   if (isQuest()) {
-    const detail = `⏱ ${Logic.formatDuration(elapsedMs)} · ${attempts}번째 도전`;
+    const detail = t('quest.meta', { time: I18n.formatDuration(elapsedMs), n: attempts });
     return Logic.isPerfect(result)
-      ? `🏆🌟 퀘스트 퍼펙트 클리어! 최소 횟수 ${moves}번 · ${detail}`
-      : `🏆 퀘스트 클리어! ${moves}번 · ${detail} (최소 ${puzzle.minMoves} · 제한 ${puzzle.moveLimit})`;
+      ? t('msg.questPerfect', { moves, detail })
+      : t('msg.questWin', { moves, detail, min: puzzle.minMoves, limit: puzzle.moveLimit });
   }
-  if (Logic.isPerfect(result)) return `🌟 퍼펙트! 최소 횟수 ${moves}번 만에 성공했어요.`;
-  const hintText = hints ? `, 힌트 ${hints}회` : '';
-  return `✨ 성공! ${moves}번 만에 모든 불을 껐어요. (최소 ${puzzle.minMoves}번${hintText})`;
+  if (Logic.isPerfect(result)) return t('msg.perfect', { moves });
+  const hint = hints ? t('msg.winHint', { n: hints }) : '';
+  return t('msg.win', { moves, min: puzzle.minMoves, hint });
 }
 
 function failMessage() {
-  return `😢 실패! 제한 ${puzzle.moveLimit}번을 모두 썼어요. "다시 시작"으로 ${attempts + 1}번째 도전!`;
+  return t('msg.fail', { limit: puzzle.moveLimit, next: attempts + 1 });
 }
 
 // 기본 안내: 남은 불 개수도 알려 줘서 화면 읽기 프로그램 사용자도 진행 상황을 알 수 있게 합니다.
 function playingMessage() {
   const lit = board.filter(Boolean).length;
-  if (isQuest()) return `남은 불 ${lit}개 · 남은 기회 ${puzzle.moveLimit - moves}번`;
-  return `남은 불 ${lit}개 · 빛나는 타일을 모두 꺼 주세요.`;
+  if (isQuest()) return t('msg.playingQuest', { lit, left: puzzle.moveLimit - moves });
+  return t('msg.playing', { lit });
 }
 
 function paint(message) {
@@ -237,12 +231,14 @@ function paint(message) {
     tile.tabIndex = i === focusIndex ? 0 : -1; // Tab 키로는 보드에 한 번만 들어오고, 안에서는 방향키로 이동
   });
   movesEl.textContent = String(moves);
-  parEl.textContent = isQuest() ? `최소 ${puzzle.minMoves} · 제한 ${puzzle.moveLimit}` : `최소 ${puzzle.minMoves}번`;
+  parEl.textContent = isQuest()
+    ? t('game.parQuest', { min: puzzle.minMoves, limit: puzzle.moveLimit })
+    : t('game.par', { min: puzzle.minMoves });
   resetEl.disabled = moves === 0 && hints === 0;
   hintEl.hidden = solved;
   hintEl.disabled = isQuest(); // 퀘스트는 힌트 금지
   hintIconEl.textContent = isQuest() ? '🚫' : '💡';
-  hintLabelEl.textContent = isQuest() ? '힌트 금지' : '힌트';
+  hintLabelEl.textContent = t(isQuest() ? 'game.noHint' : 'game.hint');
   hintCountEl.textContent = hints ? ` (${hints})` : '';
   shareEl.hidden = !solved;
   feedbackEl.classList.toggle('win', solved);
@@ -259,26 +255,27 @@ function paintRecords() {
     const cleared = Boolean(store.history[input.value][playDate]); // 지금 보고 있는 날짜 기준
     input.closest('label').querySelector('.done').hidden = !cleared;
   });
-  const { label } = Logic.DIFFICULTIES[difficulty];
   const stats = Logic.statsFor(store, difficulty);
   const best = store.history[difficulty][playDate];
-  const bestLabel = isArchive() ? '이 날 최고' : '오늘 최고';
-  const timeText = best && best.timeMs !== undefined ? ` · ${Logic.formatDuration(best.timeMs)}` : '';
-  const bestText = best ? ` · ${bestLabel} ${best.moves}번${best.hints ? `(힌트 ${best.hints})` : ''}${timeText}` : '';
-  statsEl.textContent = `${label} 기록 · 성공 ${stats.cleared}일 · 퍼펙트 ${stats.perfect}일${bestText}`;
+  let bestText = '';
+  if (best) {
+    bestText = t('stats.best', {
+      label: t(isArchive() ? 'stats.bestDay' : 'stats.bestToday'),
+      moves: best.moves,
+      hint: best.hints ? t('stats.bestHint', { n: best.hints }) : '',
+      time: best.timeMs !== undefined ? ` · ${I18n.formatDuration(best.timeMs)}` : '',
+    });
+  }
+  statsEl.textContent = t('stats.line', {
+    label: t(`diff.${difficulty}`), cleared: stats.cleared, perfect: stats.perfect, best: bestText,
+  });
 
   // 상단 기록 버튼의 🔥 연속 일수
   const { current } = Logic.streaks(store, todayKey);
   streakBadgeEl.hidden = current === 0;
   streakBadgeEl.textContent = `🔥${current}`;
-  recordsButtonEl.setAttribute('aria-label', current ? `나의 기록, ${current}일 연속 성공 중` : '나의 기록');
+  recordsButtonEl.setAttribute('aria-label', current ? t('top.recordsAriaStreak', { n: current }) : t('top.recordsAria'));
   window.DailyLightsRecords.render(); // 기록 창이 열려 있으면 함께 갱신
-}
-
-function paintSoundButton() {
-  soundEl.setAttribute('aria-pressed', String(!sound.muted)); // 눌림 = 소리 켜짐
-  soundEl.querySelector('.sound-icon').textContent = sound.muted ? '🔇' : '🔊';
-  soundEl.querySelector('.sound-text').textContent = sound.muted ? '소리 꺼짐' : '소리 켜짐';
 }
 
 // 같은 애니메이션 클래스를 다시 붙여도 처음부터 재생되게 합니다.
@@ -293,7 +290,7 @@ function buildBoard() {
   if (boardEl.children.length === size * size) return;
   boardEl.replaceChildren();
   boardEl.style.setProperty('--size', size);
-  boardEl.setAttribute('aria-label', `${size}×${size} 퍼즐 보드. 방향키로 칸을 이동하고 Enter나 Space로 누르세요.`);
+  boardEl.setAttribute('aria-label', t('game.boardAria', { size }));
   for (let i = 0; i < size * size; i++) {
     const tile = document.createElement('button');
     tile.className = 'tile';
@@ -311,7 +308,7 @@ function buildBoard() {
 // 탭을 켜둔 채 날짜가 바뀌었다면 true 를 돌려주고 오늘의 퍼즐을 엽니다.
 function refreshIfNewDay() {
   if (Logic.dateKeyKST() === todayKey) return false;
-  start(NEW_DAY_MESSAGE);
+  start(t('msg.newDay'));
   return true;
 }
 
@@ -335,17 +332,17 @@ function handlePress(index) {
     if (isArchive()) result.late = true; // 지난 퍼즐 기록은 연속 성공에 넣지 않음
     const isNewBest = Logic.recordResult(store, difficulty, playDate, result);
     if (isArchive()) {
-      message = `${winMessage()} ${isNewBest ? '지난 퍼즐 기록으로 저장했어요.' : '이 날의 기록은 그대로예요.'}`;
-    } else if (!isNewBest) message = `${winMessage()} 오늘 최고 기록은 그대로예요.`;
+      message = `${winMessage()} ${t(isNewBest ? 'msg.archiveSaved' : 'msg.archiveKept')}`;
+    } else if (!isNewBest) message = `${winMessage()} ${t('msg.bestKept')}`;
     else {
       const extras = [];
       if (isQuest() && !wasQuestClearedToday) { // 오늘 첫 퀘스트 클리어면 퀘스트 연속 축하
         const quest = Logic.questStats(store, todayKey);
-        if (quest.current > 1) extras.push(`🏆 퀘스트 ${quest.current}일 연속 클리어!`);
+        if (quest.current > 1) extras.push(t('msg.questStreak', { n: quest.current }));
       }
       if (!wasClearedToday) { // 오늘 첫 성공이면 연속 기록을 축하
         const { current } = Logic.streaks(store, todayKey);
-        if (current > 1) extras.push(`🔥 ${current}일 연속 성공!`);
+        if (current > 1) extras.push(t('msg.streak', { n: current }));
       }
       if (extras.length) message = `${winMessage()} ${extras.join(' ')}`;
     }
@@ -371,7 +368,7 @@ function showHint() {
   focusIndex = index;
   persist();
   const remaining = Logic.solve(board, size).length;
-  paint(`💡 반짝이는 칸을 눌러 보세요. 앞으로 최소 ${remaining}번이면 끝나요.`);
+  paint(t('msg.hint', { n: remaining }));
   replayAnimation(boardEl.children[index], 'pressed');
   boardEl.children[index].focus({ preventScroll: true });
   sound.hint();
@@ -397,7 +394,7 @@ function resetPuzzle() {
   resumeTimer();
   persist();
   // 성공 기록은 history 에 따로 남아 있으므로 다시 풀어도 지워지지 않습니다.
-  paint('처음 상태로 되돌렸어요.');
+  paint(t('msg.reset'));
   sound.reset();
   boardEl.querySelectorAll('.tile.on').forEach(tile => replayAnimation(tile, 'flip'));
   boardEl.children[focusIndex].focus();
@@ -421,12 +418,18 @@ function loadPuzzle(message) {
   resumeTimer();
 
   dateEl.textContent = playDate;
-  dateLabelEl.textContent = isArchive() ? '지난 퍼즐' : '오늘의 퍼즐';
   archiveBarEl.hidden = !isArchive();
   questBarEl.hidden = !isQuest();
-  if (isQuest()) questRuleEl.textContent = `힌트 없이 ${puzzle.moveLimit}번 안에 모든 불 끄기`;
   buildBoard();
+  paintLabels();
   paint(message);
+}
+
+// 언어에 따라 바뀌는 고정 문구 (퍼즐을 열 때, 언어를 바꿀 때)
+function paintLabels() {
+  dateLabelEl.textContent = t(isArchive() ? 'game.labelPast' : 'game.labelToday');
+  if (isQuest()) questRuleEl.textContent = t('quest.rule', { limit: puzzle.moveLimit });
+  boardEl.setAttribute('aria-label', t('game.boardAria', { size }));
 }
 
 // 달력에서 날짜를 골랐을 때 (records.js 에서 호출). 오늘이나 범위 밖 날짜면 오늘 퍼즐로.
@@ -434,7 +437,7 @@ function openDate(date) {
   if (refreshIfNewDay()) return;
   pauseTimer(); // 지금 퀘스트 시간을 저장하고 이동
   playDate = Logic.isArchiveDate(date, todayKey) ? date : todayKey;
-  loadPuzzle(isArchive() ? `📅 ${playDate} 퍼즐을 열었어요.` : '오늘의 퍼즐로 돌아왔어요.');
+  loadPuzzle(isArchive() ? t('msg.openedPast', { date: playDate }) : t('msg.backToday'));
   boardEl.children[focusIndex].focus({ preventScroll: true });
   document.querySelector('.game').scrollIntoView({ behavior: reducedMotion.matches ? 'auto' : 'smooth', block: 'start' });
 }
@@ -545,17 +548,20 @@ function launchConfetti() {
 async function shareResult() {
   if (!solved) return;
   // 시작 보드 그림 + 나의 결과 막대 (문구 모양은 logic.js 의 resultShareText 참고)
+  const result = { moves, hints, minMoves: puzzle.minMoves };
+  if (isQuest()) Object.assign(result, { attempts, timeMs: elapsedMs }); // 퀘스트는 시간·도전 횟수도 공유
   const outcome = await shareText(Logic.resultShareText({
     date: playDate,
     difficulty,
     board: puzzle.board,
-    result: { moves, hints, minMoves: puzzle.minMoves },
+    result,
     streak: Logic.streaks(store, todayKey).current,
     questStreak: Logic.questStats(store, todayKey).current,
     archive: isArchive(),
+    t, // 고른 언어로 공유 문구 만들기
   }));
-  if (outcome === 'copied') paint('결과를 복사했어요! 친구에게 붙여넣어 보세요.');
-  else if (outcome === 'failed') paint('공유하지 못했어요. 다시 시도해 주세요.');
+  if (outcome === 'copied') paint(t('msg.copied'));
+  else if (outcome === 'failed') paint(t('msg.shareFailed'));
 }
 
 // 공유창 → 클립보드 → 직접 복사 창 순서로 시도합니다.
@@ -573,7 +579,7 @@ async function shareText(text) {
     await navigator.clipboard.writeText(summary);
     return 'copied';
   } catch (e) {
-    try { window.prompt('아래 내용을 복사해 주세요:', summary); return 'prompted'; } catch (e2) { return 'failed'; }
+    try { window.prompt(t('msg.copyPrompt'), summary); return 'prompted'; } catch (e2) { return 'failed'; }
   }
 }
 
@@ -588,8 +594,6 @@ function importRecords(incoming) {
 // ── 시작 ───────────────────────────────────────────────
 
 storageRemove(OLD_STORE_KEY);
-sound.load();
-paintSoundButton();
 window.DailyLightsRecords.init({
   getStore: () => store,
   getToday: () => todayKey,
@@ -600,7 +604,8 @@ window.DailyLightsRecords.init({
 });
 start();
 if (!storageWorks()) {
-  footnoteEl.textContent = '⚠️ 이 브라우저에서는 저장이 꺼져 있어(사생활 보호 모드 등) 새로고침하면 진행 상황과 기록이 사라져요.';
+  footnoteEl.dataset.i18n = 'game.storageOff'; // 언어를 바꿔도 이 경고가 유지되도록
+  footnoteEl.textContent = t('game.storageOff');
   footnoteEl.classList.add('warning');
 }
 
@@ -610,10 +615,11 @@ backToTodayEl.addEventListener('click', () => openDate(todayKey));
 hintEl.addEventListener('click', showHint);
 shareEl.addEventListener('click', shareResult);
 difficultyInputs.forEach(input => input.addEventListener('change', () => changeDifficulty(input.value)));
-soundEl.addEventListener('click', () => {
-  sound.setMuted(!sound.muted);
-  paintSoundButton();
-  sound.tap(true); // 소리를 켰을 때 바로 들리도록 확인음
+// 설정 창(settings.js)에서 바뀐 값 반영
+window.addEventListener('daily-lights:sound', () => sound.tap(true)); // 소리를 켰을 때 바로 들리도록 확인음
+window.addEventListener('daily-lights:language', () => { // 언어를 바꾸면 게임 문구를 다시 그림
+  paintLabels();
+  paint();
 });
 window.addEventListener('focus', checkNewDay);
 document.addEventListener('visibilitychange', () => {
@@ -634,6 +640,6 @@ window.addEventListener('storage', event => {
 
 // 예상하지 못한 오류가 나면 조용히 멈추지 않고 안내합니다. (브라우저 확장 프로그램 오류는 제외)
 window.addEventListener('error', event => {
-  if (!/(logic|records|game)\.js/.test(event.filename || '')) return;
-  feedbackEl.textContent = '문제가 생겼어요. 페이지를 새로고침해 주세요.';
+  if (!/(logic|i18n|settings|records|game)\.js/.test(event.filename || '')) return;
+  feedbackEl.textContent = t('msg.error');
 });

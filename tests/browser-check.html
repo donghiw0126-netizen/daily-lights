@@ -15,6 +15,7 @@
 <pre id="result">실행 중…</pre>
 <script>
 const KEY = 'daily-lights-v2';
+const SETTINGS = 'daily-lights-settings-v1';
 const lines = [];
 let failed = 0;
 function check(ok, name, detail = '') {
@@ -356,6 +357,120 @@ async function questChecks() {
   check($(frame, '#questBar').hidden && !$(frame, '#hint').disabled && text('#hintLabel') === '힌트', '다른 난이도로 바꾸면 힌트 다시 사용 가능');
 }
 
+// ⚙️ 설정 창: 효과음·진동 켜고 끄기, 저장
+async function settingsChecks() {
+  localStorage.setItem(SETTINGS, JSON.stringify({ lang: 'ko' }));
+  localStorage.setItem(KEY, JSON.stringify({ version: 2, difficulty: 'easy', progress: {}, history: {} }));
+  const frame = await loadGame(320, 800);
+  const win = frame.contentWindow;
+  const saved = () => JSON.parse(localStorage.getItem(SETTINGS) || '{}');
+
+  $(frame, '#openSettings').click();
+  const dialog = $(frame, '#settings');
+  check(dialog.open, '⚙️ 설정 창 열림');
+  const d = dialog.getBoundingClientRect();
+  const root = frame.contentDocument.documentElement;
+  check(d.left >= 0 && d.right <= root.clientWidth + 0.5 && d.bottom <= win.innerHeight + 0.5, '320px: 설정 창이 화면 안에 들어옴');
+  check($(frame, '#settingSound').checked, '효과음은 처음에 켜짐');
+  $(frame, '#settingSound').click();
+  check(win.DailyLightsSettings.muted === true && saved().muted === true, '효과음 끄기 → 저장');
+
+  const vibration = $(frame, '#settingVibration');
+  if (win.DailyLightsSettings.vibrationSupported) {
+    check(!vibration.disabled && vibration.checked, '진동 지원 기기: 스위치 켜짐');
+    const calls = [];
+    win.navigator.vibrate = pattern => { calls.push(pattern); return true; }; // 실제 진동 대신 기록
+    $(frame, '#closeSettings').click();
+    tiles(frame)[0].click();
+    check(calls.length === 1 && calls[0] === 12, '타일을 누르면 짧게 진동', JSON.stringify(calls));
+    $(frame, '#openSettings').click();
+    vibration.click();
+    tiles(frame)[1].click();
+    check(saved().vibration === false && calls.length === 1, '진동 끄기 → 저장, 더 이상 진동 안 함', `calls=${calls.length}`);
+  } else {
+    check(vibration.disabled && $(frame, '#vibrationHelp').textContent.includes('지원하지'), '진동 미지원 기기: 스위치 비활성 + 안내');
+  }
+  $(frame, '#closeSettings').click();
+  await reload(frame);
+  check(frame.contentWindow.DailyLightsSettings.muted === true, '새로고침해도 설정 유지');
+  localStorage.setItem(SETTINGS, JSON.stringify({ lang: 'ko' }));
+}
+
+// 🌐 영어 모드: 화면 어디에도 한글이 남지 않아야 함 (일부러 한국어로 둔 lang="ko" 는 제외)
+function hangulIn(rootEl) {
+  const found = [];
+  const walker = rootEl.ownerDocument.createTreeWalker(rootEl, NodeFilter.SHOW_TEXT);
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    const parent = node.parentElement;
+    if (!parent || parent.closest('[lang="ko"], noscript, script, style')) continue;
+    if (/[가-힣]/.test(node.textContent)) found.push(node.textContent.trim().slice(0, 40));
+  }
+  for (const el of rootEl.querySelectorAll('[aria-label], [title]')) {
+    for (const attr of ['aria-label', 'title']) {
+      const value = el.getAttribute(attr) || '';
+      if (/[가-힣]/.test(value)) found.push(`${attr}: ${value.slice(0, 40)}`);
+    }
+  }
+  return found;
+}
+
+async function englishChecks() {
+  localStorage.setItem(SETTINGS, JSON.stringify({ lang: 'ko' }));
+  localStorage.setItem(KEY, JSON.stringify({ version: 2, difficulty: 'easy', progress: {}, history: {} }));
+  const frame = await loadGame(390, 900);
+  const doc = () => frame.contentDocument;
+  const where = list => list.slice(0, 3).join(' | ');
+
+  // 설정 창에서 English 선택
+  $(frame, '#openSettings').click();
+  $(frame, 'input[name="language"][value="en"]').click();
+  check(hangulIn($(frame, '#settings')).length === 0, '영어: 설정 창에 한글 없음 ("한국어" 선택지 제외)', where(hangulIn($(frame, '#settings'))));
+  $(frame, '#closeSettings').click();
+  check(doc().documentElement.lang === 'en' && doc().title === 'Daily Lights | Daily Puzzle', '영어로 바꾸면 페이지 언어·제목도 영어');
+  check(hangulIn($(frame, '.app')).length === 0, '영어: 메인 화면 전체에 한글 없음', where(hangulIn($(frame, '.app'))));
+
+  tiles(frame)[0].click();
+  $(frame, '#hint').click();
+  check(/^💡 Tap the glowing tile/.test($(frame, '#feedback').textContent), '영어: 힌트 안내', $(frame, '#feedback').textContent);
+  check(hangulIn($(frame, '.app')).length === 0, '영어: 플레이 중에도 한글 없음', where(hangulIn($(frame, '.app'))));
+
+  // 성공 → 공유 문구도 영어
+  let shared = '';
+  frame.contentWindow.navigator.share = async data => { shared = data.text; };
+  const Logic = frame.contentWindow.DailyLightsLogic;
+  for (const i of Logic.solve(state(frame).board, 3)) tiles(frame)[i].click();
+  check($(frame, '#feedback').textContent.startsWith('✨ Solved') || $(frame, '#feedback').textContent.startsWith('🌟 Perfect'), '영어: 성공 메시지', $(frame, '#feedback').textContent);
+  $(frame, '#share').click();
+  await waitFor(() => shared !== '');
+  check(shared.includes('Easy 3×3') && !/[가-힣]/.test(shared), '영어: 공유 문구', shared.split('\n')[0]);
+
+  $(frame, '#openRecords').click();
+  check(hangulIn($(frame, '#records')).length === 0, '영어: 기록 창(달력·표 포함)에 한글 없음', where(hangulIn($(frame, '#records'))));
+  check(/^[A-Z][a-z]+ \d{4}$/.test($(frame, '#calendarTitle').textContent), '영어: 달력 제목', $(frame, '#calendarTitle').textContent);
+  $(frame, '#closeRecords').click();
+
+  choose(frame, 'quest');
+  check($(frame, '#questRule').textContent.includes('no hints') && hangulIn($(frame, '.app')).length === 0, '영어: 퀘스트 화면', where(hangulIn($(frame, '.app'))));
+
+  $(frame, '#openTutorial').click();
+  check(hangulIn($(frame, '#tutorial')).length === 0, '영어: 처음 안내 1단계', where(hangulIn($(frame, '#tutorial'))));
+  $(frame, '#tutorialNext').click();
+  frame.contentDocument.querySelectorAll('.tutorial-board.practice button')[4].click();
+  check(hangulIn($(frame, '#tutorial')).length === 0, '영어: 처음 안내 연습판', where(hangulIn($(frame, '#tutorial'))));
+  $(frame, '#tutorialSkip').click();
+
+  await reload(frame);
+  check(doc().documentElement.lang === 'en' && $(frame, '#feedback').textContent.length > 0 && hangulIn($(frame, '.app')).length === 0,
+    '새로고침해도 영어 유지');
+
+  // 다시 한국어로
+  $(frame, '#openSettings').click();
+  $(frame, 'input[name="language"][value="ko"]').click();
+  $(frame, '#closeSettings').click();
+  check(doc().documentElement.lang === 'ko' && $(frame, '#guide-title').textContent === '처음이라면? 게임 방법', '한국어로 되돌리기');
+  localStorage.setItem(SETTINGS, JSON.stringify({ lang: 'ko' }));
+}
+
 // 처음 안내 (tutorial.js)
 async function tutorialChecks() {
   const SEEN = 'daily-lights-tutorial-seen';
@@ -470,7 +585,7 @@ async function layoutChecks(width, difficulty, height = 1000) {
   const tag = `${width}×${height} ${difficulty}`;
   check(root.scrollWidth <= root.clientWidth, `${tag}: 가로 스크롤 없음`, `${root.scrollWidth} vs ${root.clientWidth}`);
 
-  const items = [...doc.querySelectorAll('#sound, #openRecords, .brand, .difficulty label > span, #reset, #hint, #share, .tile, .move-counter, #dateTitle, #stats')]
+  const items = [...doc.querySelectorAll('#openSettings, #openRecords, .brand, .difficulty label > span, #reset, #hint, #share, .tile, .move-counter, #dateTitle, #stats')]
     .filter(el => el.getClientRects().length) // 숨겨진 요소 제외
     .map(el => ({ el, r: el.getBoundingClientRect() }));
   const clashes = [];
@@ -482,7 +597,7 @@ async function layoutChecks(width, difficulty, height = 1000) {
   check(clashes.length === 0, `${tag}: 버튼·타일 겹침 없음`, clashes.slice(0, 3).join(', '));
   const outside = items.filter(({ r }) => r.left < 0 || r.right > root.clientWidth + 0.5);
   check(outside.length === 0, `${tag}: 화면 밖으로 나간 요소 없음`);
-  const small = [...doc.querySelectorAll('#reset, #hint, .tile, #sound, .difficulty label > span')]
+  const small = [...doc.querySelectorAll('#reset, #hint, .tile, #openSettings, #openRecords, .difficulty label > span')]
     .filter(el => el.getClientRects().length && el.getBoundingClientRect().height < 36);
   check(small.length === 0, `${tag}: 터치 대상 높이 36px 이상`, small.map(el => el.id || el.className).join(', '));
 
@@ -501,6 +616,9 @@ async function layoutChecks(width, difficulty, height = 1000) {
 (async () => {
   const backup = localStorage.getItem(KEY);
   const seenBackup = localStorage.getItem('daily-lights-tutorial-seen');
+  const settingsBackup = localStorage.getItem(SETTINGS);
+  // 헤드리스 브라우저는 영어 환경이라 처음 방문이면 영어로 뜹니다. 한국어 문구 검사를 위해 한국어로 시작 (영어는 englishChecks 에서)
+  localStorage.setItem(SETTINGS, JSON.stringify({ lang: 'ko' }));
   // 처음 안내 창이 다른 검사를 가리지 않도록 "이미 봤음"으로 두고 시작 (안내는 tutorialChecks 에서 따로 검사)
   localStorage.setItem('daily-lights-tutorial-seen', '1');
   try {
@@ -513,6 +631,8 @@ async function layoutChecks(width, difficulty, height = 1000) {
     await pwaDevChecks();
     await tutorialChecks(); // 끝나면 "봤음" 상태로 남아 아래 레이아웃 검사를 가리지 않음
     await questChecks();
+    await settingsChecks();
+    await englishChecks();
     for (const w of [320, 360, 390, 768, 1280]) for (const d of ['easy', 'hard', 'quest']) await layoutChecks(w, d);
     await layoutChecks(740, 'hard', 360); // 휴대폰 가로 모드
   } catch (e) {
@@ -521,6 +641,7 @@ async function layoutChecks(width, difficulty, height = 1000) {
     if (backup === null) localStorage.removeItem(KEY); else localStorage.setItem(KEY, backup);
     if (seenBackup === null) localStorage.removeItem('daily-lights-tutorial-seen');
     else localStorage.setItem('daily-lights-tutorial-seen', seenBackup);
+    if (settingsBackup === null) localStorage.removeItem(SETTINGS); else localStorage.setItem(SETTINGS, settingsBackup);
   }
   lines.push('', failed ? `결과: ${failed}개 실패` : '결과: 모두 통과');
   const pre = document.querySelector('#result');
